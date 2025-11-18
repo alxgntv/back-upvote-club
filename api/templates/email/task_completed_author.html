@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        /* Поддержка темной темы через prefers-color-scheme */
+        /* Светлая тема (по умолчанию) */
+        body {
+            font-family: Inter, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 600px;
+            margin: 32px auto;
+            padding: 20px;
+            background: #ffffff;
+            border-radius: 32px;
+        }
+        .header {
+            text-align: center;
+            padding: 20px 0;
+            color: #000000;
+        }
+        .task-card {
+            padding: 16px;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            margin-bottom: 16px;
+        }
+        .task-info {
+            margin-bottom: 12px;
+        }
+        .task-stat {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        .task-stat-label {
+            color: #6b7280;
+        }
+        .task-stat-value {
+            font-weight: 600;
+            color: #1f2937;
+            padding-left: 4px;
+        }
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #6b7280;
+            font-size: 14px;
+        }
+        .view-button {
+            display: inline-block;
+            background: #000000;
+            color: #ffffff;
+            padding: 8px 16px;
+            border-radius: 12px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            margin-right: 32px;
+        }
+        a.view-button {
+            color: #ffffff!important;
+        }
+        /* Темная тема */
+        @media (prefers-color-scheme: dark) {
+            body {
+                background-color: #18181b !important;
+            }
+            .container {
+                background: #23232a !important;
+                color: #f3f4f6 !important;
+            }
+            .header, .footer {
+                color: #f3f4f6 !important;
+            }
+            .task-card {
+                border: 1px solid #333646 !important;
+                background: #23232a !important;
+            }
+            .task-stat-label {
+                color: #a1a1aa !important;
+            }
+            .task-stat-value {
+                color: #f3f4f6 !important;
+            }
+            .view-button {
+                background: #f3f4f6 !important;
+                color: #18181b !important;
+            }
+            a.view-button {
+                color: #18181b !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>Your upvote.club task completed</h2>
+            <p>Here is the details about delivery</p>
+        </div>
+
+        <div class="task-card">
+            <div class="task-info">
+                <div class="task-stat">
+                    <span class="task-stat-label">👉 Task Type: </span>
+                    <span class="task-stat-value">{{ task.type }} ({{ task.social_network.name }})</span>
+                </div>
+                <div class="task-stat">
+                    <span class="task-stat-label">🌐 Task URL: </span>
+                    <span class="task-stat-value">{{ task.post_url }}</span>
+                </div>
+                {% if completion_time != 'N/A' and completion_hours < 10 %}
+                <div class="task-stat">
+                    <span class="task-stat-label">⏰ Completion Time: </span>
+                    <span class="task-stat-value">{{ completion_time }}</span>
+                </div>
+                {% endif %}
+                <div class="task-stat">
+                    <span class="task-stat-label">🧗‍♂️ Requested {{ task.type }}: </span>
+                    <span class="task-stat-value">{{ task.actions_required }}</span>
+                </div>
+                <div class="task-stat">
+                    <span class="task-stat-label">📈 Shipped {{ task.social_network.name }} {{ task.type }}: </span>
+                    <span class="task-stat-value">{{ task.actions_completed }}</span>
+                </div>
+            </div>
+            <div style="text-align: center;">
+                <a href="https://upvote.club/dashboard/createtask?email={{ user_email }}" class="view-button">
+                    Create new task 
+                </a>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>
+                Don't want to receive these emails? 
+                <a href="{{ unsubscribe_url }}?email={{ user_email }}">unsubscribe</a>
+                <span>from task notifications</span>
+            </p>
+            <p>Upvote.club</p>
+        </div>
+    </div>
+</body>
+</html>

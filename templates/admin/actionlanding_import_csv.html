@@ -1,0 +1,139 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static admin_urls %}
+
+{% block title %}{{ title }} | {{ site_title|default:"Django site admin" }}{% endblock %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+    .import-form {
+        background: #fff;
+        padding: 30px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        max-width: 800px;
+        margin: 20px auto;
+    }
+    .form-group {
+        margin-bottom: 20px;
+    }
+    .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 600;
+        color: #333;
+    }
+    .form-group input[type="file"] {
+        width: 100%;
+        padding: 10px;
+        border: 2px dashed #ddd;
+        border-radius: 4px;
+        background: #f9f9f9;
+        cursor: pointer;
+    }
+    .form-group input[type="file"]:hover {
+        border-color: #007bff;
+        background: #f0f7ff;
+    }
+    .help-text {
+        margin-top: 8px;
+        font-size: 13px;
+        color: #666;
+        line-height: 1.5;
+    }
+    .btn-submit {
+        background-color: #007bff;
+        color: white;
+        padding: 12px 30px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        margin-right: 10px;
+    }
+    .btn-submit:hover {
+        background-color: #0056b3;
+    }
+    .btn-cancel {
+        background-color: #6c757d;
+        color: white;
+        padding: 12px 30px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        text-decoration: none;
+        display: inline-block;
+    }
+    .btn-cancel:hover {
+        background-color: #5a6268;
+    }
+    .csv-format-info {
+        background: #e7f3ff;
+        border-left: 4px solid #007bff;
+        padding: 15px;
+        margin-top: 20px;
+        border-radius: 4px;
+    }
+    .csv-format-info h3 {
+        margin-top: 0;
+        color: #007bff;
+    }
+    .csv-format-info ul {
+        margin: 10px 0;
+        padding-left: 25px;
+    }
+    .csv-format-info code {
+        background: #fff;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 12px;
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+<a href="{% url 'admin:index' %}">{% translate 'Home' %}</a>
+&rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+&rsaquo; <a href="{% url opts|admin_urlname:'changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+&rsaquo; Import CSV
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="import-form">
+    <h1>Import ActionLanding from CSV</h1>
+    
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        
+        <div class="form-group">
+            <label for="csv_file">Select CSV File</label>
+            <input type="file" id="csv_file" name="csv_file" accept=".csv" required>
+            <div class="help-text">
+                Select a CSV file with ActionLanding data. The file must contain a 'slug' column.
+            </div>
+        </div>
+        
+        <div style="margin-top: 25px;">
+            <button type="submit" class="btn-submit">📥 Import CSV</button>
+            <a href="{% url opts|admin_urlname:'changelist' %}" class="btn-cancel">Cancel</a>
+        </div>
+    </form>
+    
+    <div class="csv-format-info">
+        <h3>CSV Format Requirements:</h3>
+        <ul>
+            <li><strong>Required column:</strong> <code>slug</code> - used to identify/create landing pages</li>
+            <li><strong>Optional columns:</strong> <code>title</code>, <code>social_network</code> (ID, code, or name), <code>action</code>, <code>meta_title</code>, <code>meta_description</code>, <code>h1</code>, <code>content</code>, <code>page_type</code>, <code>page_blocks</code>, <code>short_description</code>, <code>long_description</code>, <code>redirect_url</code>, <code>faq</code> (JSON format)</li>
+            <li>If a landing with the given <code>slug</code> exists, it will be updated; otherwise, a new one will be created</li>
+            <li>The CSV file should use UTF-8 encoding</li>
+            <li><code>social_network</code> can be provided as ID (number), code (e.g., "TWITTER"), or name (e.g., "Twitter")</li>
+            <li><code>faq</code> should be valid JSON array, e.g.: <code>[{"q": "Question?", "a": "Answer"}]</code></li>
+        </ul>
+    </div>
+</div>
+{% endblock %}
+

@@ -1,0 +1,99 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<div class="module">
+    <h2>Time to Value Metrics</h2>
+    
+    {% if error %}
+        <div class="errornote">{{ error }}</div>
+    {% else %}
+        <div class="results">
+            <h3>Overall Statistics</h3>
+            <table>
+                <tr>
+                    <th>Metric</th>
+                    <th>Value</th>
+                </tr>
+                <tr>
+                    <td>Average Completion Time</td>
+                    <td>
+                        {% if ttv_stats.avg_completion_time %}
+                            {{ ttv_stats.avg_completion_time|floatformat:2 }} hours
+                        {% else %}
+                            N/A
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr>
+                    <td>Total Completed Tasks</td>
+                    <td>{{ ttv_stats.total_completed|default:"0" }}</td>
+                </tr>
+            </table>
+
+            <h3>Period Statistics</h3>
+            <table>
+                <tr>
+                    <th>Period</th>
+                    <th>Avg Completion Time</th>
+                    <th>Tasks Completed</th>
+                </tr>
+                {% for period, stats in period_stats.items %}
+                <tr>
+                    <td>{{ period|title }}</td>
+                    <td>
+                        {% if stats.avg_completion_time %}
+                            {{ stats.avg_completion_time|floatformat:2 }} hours
+                        {% else %}
+                            N/A
+                        {% endif %}
+                    </td>
+                    <td>{{ stats.total_completed|default:"0" }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+
+            <h3>Task Type Statistics</h3>
+            <table>
+                <tr>
+                    <th>Task Type</th>
+                    <th>Avg Completion Time</th>
+                    <th>Total Tasks</th>
+                    <th>Avg Price</th>
+                    <th>Total Actions</th>
+                </tr>
+                {% for stat in task_type_stats %}
+                <tr>
+                    <td>{{ stat.type }}</td>
+                    <td>
+                        {% if stat.avg_completion_time %}
+                            {{ stat.avg_completion_time|floatformat:2 }} hours
+                        {% else %}
+                            N/A
+                        {% endif %}
+                    </td>
+                    <td>{{ stat.total_tasks }}</td>
+                    <td>{{ stat.avg_price|floatformat:2 }}</td>
+                    <td>{{ stat.total_actions }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+
+            <h3>Auto Actions Statistics</h3>
+            <table>
+                <tr>
+                    <th>Metric</th>
+                    <th>Value</th>
+                </tr>
+                <tr>
+                    <td>Total Auto Actions</td>
+                    <td>{{ auto_stats.total_auto_actions|default:"0" }}</td>
+                </tr>
+                <tr>
+                    <td>Auto Actions (Last 24h)</td>
+                    <td>{{ auto_stats.auto_actions_last_24h|default:"0" }}</td>
+                </tr>
+            </table>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

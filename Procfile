@@ -1,0 +1,1 @@
+web: gunicorn buddyboost.wsgi --log-file -

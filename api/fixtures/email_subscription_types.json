@@ -1,0 +1,47 @@
+[
+    {
+        "model": "api.emailsubscriptiontype",
+        "pk": 1,
+        "fields": {
+            "name": "daily_tasks",
+            "description": "Daily available tasks notifications",
+            "created_at": "2024-01-01T00:00:00Z"
+        }
+    },
+    {
+        "model": "api.emailsubscriptiontype",
+        "pk": 2,
+        "fields": {
+            "name": "task_completed",
+            "description": "Notifications about completed tasks",
+            "created_at": "2024-01-01T00:00:00Z"
+        }
+    },
+    {
+        "model": "api.emailsubscriptiontype",
+        "pk": 3,
+        "fields": {
+            "name": "weekly_digest",
+            "description": "Weekly statistics and updates",
+            "created_at": "2024-01-01T00:00:00Z"
+        }
+    },
+    {
+        "model": "api.emailsubscriptiontype",
+        "pk": 4,
+        "fields": {
+            "name": "complete_registration",
+            "description": "Registration completion reminders",
+            "created_at": "2024-01-01T00:00:00Z"
+        }
+    },
+    {
+        "model": "api.emailsubscriptiontype",
+        "pk": 5,
+        "fields": {
+            "name": "new_task",
+            "description": "Notifications about new tasks available on the platform",
+            "created_at": "2024-01-01T00:00:00Z"
+        }
+    }
+]

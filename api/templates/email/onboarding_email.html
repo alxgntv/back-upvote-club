@@ -1,0 +1,227 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <meta name="supported-color-schemes" content="light dark">
+  <title>Invite Code Email</title>
+  <style type="text/css">
+    :root {
+      color-scheme: light dark;
+      supported-color-schemes: light dark;
+    }
+    
+    body {
+      margin: 0;
+      padding: 0;
+      -webkit-text-size-adjust: none;
+      -ms-text-size-adjust: none;
+      font-family: Inter, sans-serif;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      body {
+        background-color: #18181b !important;
+      }
+      .email-container {
+        background-color: #27272a !important;
+      }
+      .text-content {
+        color: #ffffff !important;
+      }
+      .button {
+        background-color: #3b82f6 !important;
+      }
+      .completed {
+        background-color: #22c55e !important;
+      }
+      .step-number {
+        background-color: #3f3f46 !important;
+      }
+    }
+
+    @media screen and (max-width: 600px) {
+      .email-container {
+        width: 100% !important;
+      }
+      .step-content {
+        padding: 12px !important;
+      }
+    }
+  </style>
+</head>
+<body style="margin: 0; padding: 20px; background-color: #f4f4f5;">
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" width="600" class="email-container" style="margin: auto; background-color: #ffffff; border-radius: 32px; overflow: hidden;">
+    <tr>
+      <td style="padding: 20px; text-align: center;">
+        🧗‍♀️ upvote.club
+      </td>
+    </tr>
+
+    <tr>
+      <td style="padding: 40px 20px; text-align: center;">
+        <h2 style="margin: 0; font-family: Inter, sans-serif; font-size: 24px; line-height: 32px; color: #18181b;" class="text-content">💰 Complete onboarding to get 30 points for free!</h2>
+        <p style="margin: 10px 0 0; font-family: Inter, sans-serif; font-size: 16px; color: #71717a;" class="text-content">After completing the onboarding, you will receive 30 points for free!</p>
+      </td>
+    </tr>
+
+    <!-- Step 1 -->
+    <tr>
+      <td class="step-content" style="padding: 16px 40px;">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+          <tr>
+            <td width="30" style="vertical-align: top;">
+              <div>1️⃣</div>
+            </td>
+            <td style="padding-left: 12px;">
+              <p style="margin: 0; font-family: Inter, sans-serif; font-size: 16px; font-weight: bold; color: #18181b;" class="text-content">Create upvote.club Account</p>
+              <p style="margin: 4px 0 0; font-family: Inter, sans-serif; font-size: 14px; color: #71717a;" class="text-content">Sign up for your account</p>
+            </td>
+            <td style="text-align: right;">
+              <span>Done ✅</span>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <!-- Step 2 -->
+    <tr>
+      <td class="step-content" style="padding: 16px 40px;">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+          <tr>
+            <td width="30" style="vertical-align: top;">
+              <div style="border-radius: 50%; width: 24px; height: 24px; text-align: center; line-height: 24px; color: #18181b; font-family: Inter, sans-serif;" class="step-number">2️⃣</div>
+            </td>
+            <td style="padding-left: 12px;">
+              <p style="margin: 0; font-family: Inter, sans-serif; font-size: 16px; font-weight: bold; color: #18181b;" class="text-content">Verify Twitter Account</p>
+              <p style="margin: 4px 0 0; font-family: Inter, sans-serif; font-size: 14px; color: #71717a;" class="text-content">Connect your Twitter account to continue</p>
+            </td>
+            <td style="text-align: right;">
+              {% if steps.twitter %}
+                <span>Done ✅</span>
+              {% else %}
+                <a href="https://upvote.club/dashboard/invite?verifytwitter" style="display: inline-block; background-color: #000000; color: #ffffff; padding: 8px 16px; border-radius: 12px; text-decoration: none; font-size: 14px;" class="button">Verify Twitter</a>
+              {% endif %}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <!-- Step 3 -->
+    <tr>
+      <td class="step-content" style="padding: 16px 40px;">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+          <tr>
+            <td width="30" style="vertical-align: top;">
+              <div>3️⃣</div>
+            </td>
+            <td width="300" style="padding-left: 12px;">
+              <p style="margin: 0; font-family: Inter, sans-serif; font-size: 16px; font-weight: bold; color: #18181b;" class="text-content">Install Upvote.Club Chrome Extension</p>
+              <p style="margin: 4px 0 0; font-family: Inter, sans-serif; font-size: 14px; color: #71717a;" class="text-content">Extension looks for Twitter links in your browser and automatically upvotes/comments/reposts them</p>
+            </td>
+            <td width="100" style="text-align: right;">
+              <span>Done ✅</span>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <!-- Step 4 -->
+    <tr>
+      <td class="step-content" style="padding: 16px 40px;">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+          <tr>
+            <td width="30" style="vertical-align: top;">
+              <div style="border-radius: 50%; width: 24px; height: 24px; text-align: center; line-height: 24px; color: #18181b; font-family: Inter, sans-serif;" class="step-number">4️⃣</div>
+            </td>
+            <td width="300" style="padding-left: 12px;">
+              <p style="margin: 0; font-family: Inter, sans-serif; font-size: 16px; font-weight: bold; color: #18181b;" class="text-content">Complete First Task</p>
+              <p style="margin: 4px 0 0; font-family: Inter, sans-serif; font-size: 14px; color: #71717a;" class="text-content">Become a part of the community, help others grow their Twitter</p>
+            </td>
+            <td width="120" style="text-align: right;">
+              {% if steps.complete_task %}
+                <span>Done ✅</span>
+              {% else %}
+                <a href="https://upvote.club/dashboard?completefirsttask" style="display: inline-block; background-color: #000000; color: #ffffff; padding: 8px 16px; border-radius: 12px; text-decoration: none; font-size: 14px;" class="button">Complete Task</a>
+              {% endif %}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <!-- Step 5 -->
+    <tr>
+      <td class="step-content" style="padding: 16px 40px;">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+          <tr>
+            <td width="30" style="vertical-align: top;">
+              <div style="border-radius: 50%; width: 24px; height: 24px; text-align: center; line-height: 24px; color: #18181b; font-family: Inter, sans-serif;" class="step-number">5️⃣</div>
+            </td>
+            <td style="padding-left: 12px;">
+              <p style="margin: 0; font-family: Inter, sans-serif; font-size: 16px; font-weight: bold; color: #18181b;" class="text-content">Create First Task</p>
+              <p style="margin: 4px 0 0; font-family: Inter, sans-serif; font-size: 14px; color: #71717a;" class="text-content">Create your first task to try out the platform</p>
+            </td>
+            <td style="text-align: right;">
+              {% if steps.create_task %}
+                <span>Done ✅</span>
+              {% else %}
+                <a href="https://upvote.club/dashboard/createtask?createfirsttask" style="display: inline-block; background-color: #000000; color: #ffffff; padding: 8px 16px; border-radius: 12px; text-decoration: none; font-size: 14px;" class="button">Create Task</a>
+              {% endif %}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <!-- Step 6 -->
+    <tr>
+      <td class="step-content" style="padding: 16px 40px;">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+          <tr>
+            <td width="30" style="vertical-align: top;">
+              <div style="border-radius: 50%; width: 24px; height: 24px; text-align: center; line-height: 24px; color: #18181b; font-family: Inter, sans-serif;" class="step-number">6️⃣</div>
+            </td>
+            <td style="padding-left: 12px;">
+              <p style="margin: 0; font-family: Inter, sans-serif; font-size: 16px; font-weight: bold; color: #18181b;" class="text-content">Enter Invite Code: e44848c2</p>
+              <p style="margin: 4px 0 0; font-family: Inter, sans-serif; font-size: 14px; color: #71717a;" class="text-content">Input your invite code to receive 30 points for free</p>            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <!-- Invite Code Input and Submit Button -->
+    <tr>
+      <td style="padding: 0 40px;">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+          <tr>
+            <td width="70%" style="padding-right: 10px;">
+              <input type="text" placeholder="Enter your invite code" style="width: 100%; padding: 12px; border: 1px solid #e4e4e7; border-radius: 12px; font-family: Inter, sans-serif; font-size: 16px; box-sizing: border-box;">
+            </td>
+            <td width="30%">
+              <a href="https://upvote.club/dashboard/invite?submitinvite" style="display: inline-block; background-color: #000000; color: #ffffff; padding: 12px 16px; border-radius: 12px; text-decoration: none; font-family: Inter, sans-serif; font-size: 14px; text-align: center; width: 100%;" class="button">Submit </a>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <!-- Footer with unsubscribe -->
+    <tr>
+      <td style="padding: 40px 20px; text-align: center;">
+        <p style="margin: 0; font-family: Inter, sans-serif; font-size: 14px; color: #71717a;">
+          Don't want to receive these emails? 
+          <a href="{{ unsubscribe_url }}?email={{ user.email }}" style="color: #3b82f6; text-decoration: none;">unsubscribe</a>
+          <span>from onboarding emails</span>
+        </p>
+        <p style="margin: 10px 0 0; font-family: Inter, sans-serif; font-size: 14px; color: #71717a;">Harju county, Tallinn, Lasnamäe district, Sepapaja tn 6, 15551</p>
+        <p style="margin: 10px 0 0; font-family: Inter, sans-serif; font-size: 14px; color: #71717a;">Upvoteclub OU</p>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

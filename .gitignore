@@ -1,0 +1,37 @@
+# Виртуальные окружения
+venv/
+env/
+.venv/
+.env/
+new_venv/
+.env
+*/env
+
+# Python
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Секретные файлы
+.env
+.cursorignore
+credentials/
+
+# Другие
+.DS_Store
+# Elastic Beanstalk Files
+.elasticbeanstalk/*
+!.elasticbeanstalk/*.cfg.yml
+!.elasticbeanstalk/*.global.yml
+
+certificates

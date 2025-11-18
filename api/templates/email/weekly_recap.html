@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weekly Recap | upvote.club</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            padding: 20px 0;
+        }
+        .logo {
+            max-width: 200px;
+            height: auto;
+        }
+        .stats-card {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .stats-title {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #1a1a1a;
+        }
+        .stats-value {
+            font-size: 36px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .stats-change {
+            font-size: 16px;
+            color: #28a745;
+            margin-top: 5px;
+        }
+        .stats-change.negative {
+            color: #dc3545;
+        }
+        .network-stats {
+            margin: 30px 0;
+        }
+        .network-title {
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #1a1a1a;
+        }
+        .action-stats {
+            display: inline-block;
+            background: #fff;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 8px 12px;
+            margin: 5px;
+        }
+        .leaderboard {
+            margin: 30px 0;
+        }
+        .leaderboard-title {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #1a1a1a;
+        }
+        .leaderboard-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .leaderboard-rank {
+            font-weight: bold;
+            color: #6c757d;
+            margin-right: 10px;
+        }
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #6c757d;
+            font-size: 14px;
+        }
+        .unsubscribe {
+            color: #6c757d;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <img src="cid:logo" alt="upvote.club" class="logo">
+            <h1>Your Weekly Recap</h1>
+            <p>Here's how you performed this week!</p>
+        </div>
+
+        <div class="stats-card">
+            <div class="stats-title">Completed Tasks</div>
+            <div class="stats-value">{{ total_tasks }}</div>
+            {% if tasks_change_percentage >= 0 %}
+            <div class="stats-change">↑ {{ tasks_change_percentage }}% from last week</div>
+            {% else %}
+            <div class="stats-change negative">↓ {{ tasks_change_percentage|abs }}% from last week</div>
+            {% endif %}
+        </div>
+
+        <div class="network-stats">
+            {% for network in networks %}
+            <div class="network-section">
+                <div class="network-title">{{ network.name }}</div>
+                {% for action in network.actions %}
+                <span class="action-stats">
+                    {{ action.emoji }} {{ action.name }}: {{ action.count }}
+                </span>
+                {% endfor %}
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="leaderboard">
+            <div class="leaderboard-title">🏆 Top Performers This Week</div>
+            {% for user in leaderboard %}
+            <div class="leaderboard-item">
+                <span>
+                    <span class="leaderboard-rank">#{{ forloop.counter }}</span>
+                    {{ user.username }}
+                </span>
+                <span>{{ user.points }} points</span>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="footer">
+            <p>Keep up the great work! 🚀</p>
+            <p>
+                <a href="{{ unsubscribe_url }}" class="unsubscribe">Unsubscribe</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html> 

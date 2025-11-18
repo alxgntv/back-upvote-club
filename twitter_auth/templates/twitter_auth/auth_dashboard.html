@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Twitter Authorization Dashboard</title>
+    <style>
+        .auth-button {
+            margin: 10px;
+            padding: 10px 20px;
+            background-color: #1DA1F2;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .authorized {
+            background-color: #17BF63;
+        }
+        .account-info {
+            margin: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Twitter Authorization Dashboard</h1>
+    
+    {% for status in auth_status %}
+        <div class="account-info">
+            <h3>Service Account #{{ status.account.id }}</h3>
+            <p>Status: {% if status.account.is_active %}Active{% else %}Inactive{% endif %}</p>
+            
+            {% if status.is_authorized %}
+                <p>Authorized at: {{ status.authorized_at }}</p>
+                <button class="auth-button authorized" disabled>
+                    Authorized ✓
+                </button>
+            {% else %}
+                <button 
+                    class="auth-button"
+                    onclick="location.href='{% url 'twitter_auth' status.account.id %}'"
+                >
+                    Authorize This Account
+                </button>
+            {% endif %}
+        </div>
+    {% endfor %}
+</body>
+</html>
