@@ -145,6 +145,11 @@ class UserProfile(models.Model):
         verbose_name='OS Version',
         help_text='Operating system version'
     )
+    black_friday_subscribed = models.BooleanField(
+        default=False,
+        verbose_name='Black Friday Subscribed',
+        help_text='Whether user subscribed to Black Friday deal notifications'
+    )
 
     def save(self, *args, **kwargs):
         is_new = self.pk is None

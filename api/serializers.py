@@ -229,6 +229,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'social_profiles',
             'referrer_url', 'landing_url', 'referrer_timestamp', 'referrer_user_agent',
             'device_type', 'os_name', 'os_version',
+            'black_friday_subscribed',
         ]
 
     def get_daily_task_limit(self, obj):

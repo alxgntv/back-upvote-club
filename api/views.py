@@ -3777,6 +3777,41 @@ def onboarding_progress(request):
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+@authentication_classes([JWTAuthentication])
+def subscribe_black_friday(request):
+    """
+    Подписка пользователя на уведомления о Black Friday deal
+    """
+    logger.info(f"[subscribe_black_friday] User {request.user.id} subscribing to Black Friday notifications")
+    
+    try:
+        user_profile = UserProfile.objects.get(user=request.user)
+        user_profile.black_friday_subscribed = True
+        user_profile.save(update_fields=['black_friday_subscribed'])
+        
+        logger.info(f"[subscribe_black_friday] User {request.user.id} successfully subscribed to Black Friday notifications")
+        
+        return Response({
+            'success': True,
+            'message': 'Successfully subscribed to Black Friday deal notifications',
+            'black_friday_subscribed': user_profile.black_friday_subscribed
+        }, status=status.HTTP_200_OK)
+        
+    except UserProfile.DoesNotExist:
+        logger.error(f"[subscribe_black_friday] UserProfile not found for user {request.user.id}")
+        return Response(
+            {'error': 'User profile not found'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception as e:
+        logger.error(f"[subscribe_black_friday] Error subscribing to Black Friday: {str(e)}")
+        return Response(
+            {'error': 'Failed to subscribe to Black Friday notifications'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
 class ReviewViewSet(viewsets.ModelViewSet):
     queryset = Review.objects.all()
     serializer_class = ReviewSerializer

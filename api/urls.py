@@ -9,7 +9,7 @@ from .views import (
     report_task, get_sitemap_data, create_subscription, withdrawal_info, 
     create_withdrawal, cancel_withdrawal, update_withdrawal_addresses, 
     task_completion_stats, create_subscription_intent, confirm_subscription,
-    get_verified_accounts_count
+    get_verified_accounts_count, subscribe_black_friday
 )
 from .stripe_webhooks import stripe_webhook
 from .views_landings import ActionLandingViewSet
@@ -73,4 +73,6 @@ urlpatterns = [
     path('telegram/webhook/', views.telegram_webhook, name='telegram_webhook'),
     # Median speed API endpoint
     path('median-speed/', MedianSpeedView.as_view(), name='median_speed'),
+    # Black Friday subscription
+    path('subscribe-black-friday/', subscribe_black_friday, name='subscribe_black_friday'),
 ]

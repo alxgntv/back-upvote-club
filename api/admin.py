@@ -663,7 +663,8 @@ class UserProfileAdmin(admin.ModelAdmin):
         'get_invited_users_count',
         'get_invited_by',
         'get_invite_code',
-        'has_referrer_data'
+        'has_referrer_data',
+        'black_friday_subscribed'
     ]
     
     list_filter = [
@@ -674,6 +675,7 @@ class UserProfileAdmin(admin.ModelAdmin):
         'auto_actions_enabled',
         'is_ambassador',
         'is_affiliate_partner',
+        'black_friday_subscribed',
         'user__taskcompletion__action',
         'user__taskcompletion__is_auto',
     ]
@@ -763,6 +765,7 @@ class UserProfileAdmin(admin.ModelAdmin):
                 'trial_start_date',
                 'invite_code',
                 'available_invites',
+                'black_friday_subscribed',
             )
         }),
     )
