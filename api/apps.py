@@ -13,7 +13,12 @@ class ApiConfig(AppConfig):
     name = 'api'
 
     def ready(self):
-        if not firebase_admin._apps:
-            cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS)
+        if not firebase_admin._apps and settings.FIREBASE_CREDENTIALS:
+            if isinstance(settings.FIREBASE_CREDENTIALS, dict):
+                # Credentials from environment variable (JSON dict)
+                cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS)
+            else:
+                # Credentials from file path
+                cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS)
             firebase_admin.initialize_app(cred)
         import api.signals  # Импортируем сигналы при запуске приложения

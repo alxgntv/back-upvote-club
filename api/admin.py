@@ -41,11 +41,11 @@ class TaskCompletionAdmin(admin.ModelAdmin):
         'user',
         'task',
         'action',
-        'is_auto',
         'completed_at',
         'post_url',
         'get_social_network',
-        'get_api_account'
+        'get_profile_url',
+        'get_chosen_country'
     ]
     
     list_filter = [
@@ -72,16 +72,56 @@ class TaskCompletionAdmin(admin.ModelAdmin):
             ).order_by('-created_at')
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
-    def get_api_account(self, obj):
-        if obj.metadata and 'api_account_id' in obj.metadata:
-            return f"API Account {obj.metadata['api_account_id']}"
-        return '-'
-    get_api_account.short_description = 'API Account'
-
     def get_social_network(self, obj):
         return obj.task.social_network if obj.task else '-'
     get_social_network.short_description = 'Social Network'
     get_social_network.admin_order_field = 'task__social_network'
+
+    def get_profile_url(self, obj):
+        """Получает profile_url из UserSocialProfile для пользователя и соцсети задания"""
+        try:
+            if obj.task and obj.task.social_network:
+                # Используем prefetch_related данные если доступны, иначе делаем запрос
+                social_profile = next(
+                    (p for p in obj.user.social_profiles.all() if p.social_network_id == obj.task.social_network.id),
+                    None
+                )
+                
+                if social_profile and social_profile.profile_url:
+                    url = social_profile.profile_url
+                    display_url = url[:50] + '...' if len(url) > 50 else url
+                    return format_html(
+                        '<a href="{}" target="_blank" rel="noopener noreferrer">{}</a>',
+                        url,
+                        display_url
+                    )
+            return '-'
+        except Exception:
+            return '-'
+    get_profile_url.short_description = 'Profile URL'
+
+    def get_chosen_country(self, obj):
+        """Получает chosen_country из OnboardingProgress для пользователя"""
+        try:
+            if hasattr(obj.user, 'onboarding_progress') and obj.user.onboarding_progress:
+                country = obj.user.onboarding_progress.chosen_country
+                return country if country else '-'
+            return '-'
+        except Exception:
+            return '-'
+    get_chosen_country.short_description = 'Chosen Country'
+    get_chosen_country.admin_order_field = 'user__onboarding_progress__chosen_country'
+
+    def get_queryset(self, request):
+        """Оптимизация запросов для админки"""
+        return super().get_queryset(request).select_related(
+            'user',
+            'user__onboarding_progress',
+            'task',
+            'task__social_network'
+        ).prefetch_related(
+            'user__social_profiles'
+        )
 
     def save_model(self, request, obj, form, change):
         """Логика сохранения и обработки выполнения задания"""

@@ -130,7 +130,21 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Firebase settings
-FIREBASE_CREDENTIALS = os.path.join(BASE_DIR, 'credentials', 'firebase-credentials.json')
+# Primary: take JSON from env (Heroku Config Var)
+FIREBASE_CREDENTIALS_JSON = os.getenv('FIREBASE_CREDENTIALS_JSON')
+FIREBASE_CREDENTIALS = None
+
+if FIREBASE_CREDENTIALS_JSON:
+    # Use credentials from environment variable (Heroku)
+    try:
+        FIREBASE_CREDENTIALS = json.loads(FIREBASE_CREDENTIALS_JSON)
+    except Exception:
+        FIREBASE_CREDENTIALS = None
+else:
+    # Fallback for local dev (file on disk)
+    firebase_credentials_path = os.path.join(BASE_DIR, 'credentials', 'firebase-credentials.json')
+    if os.path.exists(firebase_credentials_path):
+        FIREBASE_CREDENTIALS = firebase_credentials_path
 
 # Twitter API settings
 TWITTER_API_KEY = os.getenv('TWITTER_API_KEY')
@@ -177,8 +191,14 @@ SIMPLE_JWT = {
 }
 
 # Firebase Admin SDK initialization
-cred = credentials.Certificate(FIREBASE_CREDENTIALS)
-firebase_admin.initialize_app(cred)
+if FIREBASE_CREDENTIALS:
+    if isinstance(FIREBASE_CREDENTIALS, dict):
+        # Credentials from environment variable (JSON dict)
+        cred = credentials.Certificate(FIREBASE_CREDENTIALS)
+    else:
+        # Credentials from file path
+        cred = credentials.Certificate(FIREBASE_CREDENTIALS)
+    firebase_admin.initialize_app(cred)
 
 # Google Indexing API credentials
 # Primary: take JSON from env (Heroku Config Var)

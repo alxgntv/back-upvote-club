@@ -25,7 +25,9 @@ db.sqlite3-journal
 # Секретные файлы
 .env
 .cursorignore
-credentials/
+credentials/firebase-credentials.json
+credentials/google-indexing-api.json
+credentials/firebase-credentials-oneline.txt
 
 # Другие
 .DS_Store
