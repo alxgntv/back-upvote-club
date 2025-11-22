@@ -865,6 +865,15 @@ class UserProfileAdmin(admin.ModelAdmin):
 
     def save_model(self, request, obj, form, change):
         try:
+            # Проверяем, изменилось ли поле black_friday_subscribed на True
+            send_black_friday_email = False
+            if change and 'black_friday_subscribed' in form.changed_data:
+                old_obj = UserProfile.objects.get(pk=obj.pk)
+                if not old_obj.black_friday_subscribed and obj.black_friday_subscribed:
+                    send_black_friday_email = True
+            elif not change and obj.black_friday_subscribed:
+                send_black_friday_email = True
+            
             # Проверяем, изменилось ли поле invited_by
             if 'invited_by' in form.changed_data and obj.invited_by:
                 logger.info(f"[UserProfileAdmin] invited_by field changed for user {obj.user.username}")
@@ -884,6 +893,46 @@ class UserProfileAdmin(admin.ModelAdmin):
                     messages.error(request, f'Error sending notification to inviter: {str(e)}')
             else:
                 super().save_model(request, obj, form, change)
+            
+            # Отправляем письмо о подписке на Black Friday
+            if send_black_friday_email:
+                try:
+                    from firebase_admin import auth
+                    
+                    # Получаем email из Firebase по uid (который хранится в username)
+                    firebase_user = auth.get_user(obj.user.username)
+                    user_email = firebase_user.email
+                    
+                    if not user_email:
+                        logger.error(f"[Admin] No email found in Firebase for user {obj.user.username}")
+                        messages.error(request, 'Could not find user email')
+                        return
+                    
+                    email_service = EmailService()
+                    
+                    html_content = (
+                        "<p>You received this discount earlier than others because you subscribed to the Black Friday notification.</p>"
+                        "<p>😎🚨 MATE Plan: Only $219 (down from $439) – includes 15,000 points and unlimited tasks creation.</p>"
+                        "<p>🤜🤛 Buddy Plan: Only $74 (down from $149) – includes 5,000 points and unlimited tasks.</p>"
+                        "<p>Locked-in pricing: Your subscription price is guaranteed for the entire year.</p>"
+                    )
+                    
+                    success = email_service.send_email(
+                        to_email=user_email,
+                        subject='🚨🦩🎁 Early Bird Black Friday Deal 50% Discount on All Annual Plans in your in your box',
+                        html_content=html_content
+                    )
+                    
+                    if success:
+                        logger.info(f"[Admin] Successfully sent Black Friday subscription email to {user_email}")
+                        messages.success(request, 'Black Friday subscription email sent successfully')
+                    else:
+                        logger.warning(f"[Admin] Failed to send Black Friday subscription email to {user_email}")
+                        messages.warning(request, 'Failed to send Black Friday subscription email')
+                        
+                except Exception as e:
+                    logger.error(f"[Admin] Error sending Black Friday subscription email: {str(e)}")
+                    messages.error(request, f'Error sending Black Friday subscription email: {str(e)}')
                 
         except Exception as e:
             logger.error(f"[UserProfileAdmin] Error saving UserProfile: {str(e)}", exc_info=True)

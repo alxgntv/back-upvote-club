@@ -2060,11 +2060,13 @@ def create_subscription_intent(request):
         price_id = request.data.get('price_id')
         is_trial = request.data.get('is_trial', False)
         billing_details = request.data.get('billing_details', {})
+        promo_code = request.data.get('promo_code', None)
         
         logger.info(f"""[create_subscription_intent] Extracted data:
             price_id: {price_id}
             is_trial: {is_trial}
             billing_details: {billing_details}
+            promo_code: {promo_code}
         """)
         
         # Валидация входных данных
@@ -2223,7 +2225,8 @@ def create_subscription_intent(request):
                     'price_id': price_id,
                     'plan': plan,
                     'is_trial': is_trial,
-                    'billing_details': billing_details
+                    'billing_details': billing_details,
+                    'promo_code': promo_code if promo_code else ''
                 }
             )
 
@@ -2310,16 +2313,24 @@ def confirm_subscription(request):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        # Получаем промокод из запроса или из метаданных транзакции
+        promo_code = request.data.get('promo_code', None)
+        
         # Получаем данные из метаданных транзакции
         metadata = payment_transaction.stripe_metadata
         price_id = metadata.get('price_id')
         plan = metadata.get('plan')
         is_trial = metadata.get('is_trial', False)
         
+        # Если промокод не передан в запросе, берем из метаданных
+        if not promo_code:
+            promo_code = metadata.get('promo_code', None)
+        
         logger.info(f"""[confirm_subscription] Retrieved metadata:
             price_id: {price_id}
             plan: {plan}
             is_trial: {is_trial}
+            promo_code: {promo_code}
             customer_id: {payment_transaction.stripe_customer_id}
         """)
         
@@ -2411,7 +2422,8 @@ def confirm_subscription(request):
                     'user_id': str(request.user.id),
                     'plan': plan,
                     'transaction_id': str(payment_transaction.id),
-                    'is_trial': str(is_trial)
+                    'is_trial': str(is_trial),
+                    'promo_code': promo_code if promo_code else ''
                 }
             }
 
@@ -2419,13 +2431,93 @@ def confirm_subscription(request):
             if is_trial:
                 subscription_params['trial_period_days'] = 7
 
+            # Применяем промокод если он есть
+            promo_applied = False
+            if promo_code:
+                try:
+                    # Пытаемся найти promotion code по коду
+                    promotion_codes = stripe.PromotionCode.list(active=True, code=promo_code, limit=1)
+                    if promotion_codes.data:
+                        promotion_code_id = promotion_codes.data[0].id
+                        subscription_params['discounts'] = [{
+                            'promotion_code': promotion_code_id
+                        }]
+                        promo_applied = True
+                        logger.info(f"[confirm_subscription] Applying promotion code: {promo_code} (ID: {promotion_code_id})")
+                    else:
+                        # Если promotion code не найден, пытаемся использовать как coupon ID
+                        try:
+                            coupon = stripe.Coupon.retrieve(promo_code)
+                            subscription_params['coupon'] = promo_code
+                            promo_applied = True
+                            logger.info(f"[confirm_subscription] Applying coupon by ID: {promo_code}")
+                        except stripe.error.InvalidRequestError:
+                            # Если не найден по ID, пытаемся найти по имени (name)
+                            try:
+                                all_coupons = stripe.Coupon.list(limit=100)
+                                coupon = None
+                                for c in all_coupons.data:
+                                    if c.name and c.name.upper() == promo_code.upper():
+                                        coupon = c
+                                        break
+                                
+                                if coupon:
+                                    subscription_params['coupon'] = coupon.id
+                                    promo_applied = True
+                                    logger.info(f"[confirm_subscription] Applying coupon by name: {promo_code} (ID: {coupon.id})")
+                                else:
+                                    logger.warning(f"[confirm_subscription] Promo code/coupon not found: {promo_code}")
+                            except Exception as e:
+                                logger.error(f"[confirm_subscription] Error searching coupon by name: {str(e)}")
+                                logger.warning(f"[confirm_subscription] Promo code/coupon not found: {promo_code}")
+                except stripe.error.StripeError as e:
+                    logger.error(f"[confirm_subscription] Error applying promo code: {str(e)}")
+                    # Продолжаем создание подписки без промокода
+
             subscription = stripe.Subscription.create(**subscription_params)
+            
+            # Логируем информацию о промокоде и скидке
+            invoice_discount = 0
+            invoice_subtotal = 0
+            invoice_total = 0
+            
+            if promo_applied and subscription.latest_invoice:
+                try:
+                    invoice = stripe.Invoice.retrieve(subscription.latest_invoice)
+                    invoice_subtotal = invoice.subtotal / 100 if invoice.subtotal else 0
+                    invoice_total = invoice.total / 100 if invoice.total else 0
+                    amount_due = invoice.amount_due / 100 if invoice.amount_due else 0
+                    invoice_discount = invoice_subtotal - invoice_total
+                    discounts = invoice.discounts or []
+                    discount_info = []
+                    for disc in discounts:
+                        if disc.coupon:
+                            discount_info.append({
+                                'coupon_id': disc.coupon.id,
+                                'percent_off': disc.coupon.percent_off,
+                                'amount_off': disc.coupon.amount_off / 100 if disc.coupon.amount_off else 0
+                            })
+                    
+                    logger.info(f"""[confirm_subscription] Promo code applied:
+                        Promo Code: {promo_code}
+                        Subtotal: ${invoice_subtotal}
+                        Total: ${invoice_total}
+                        Amount Due: ${amount_due}
+                        Discount: ${invoice_discount}
+                        Discount Details: {discount_info}
+                    """)
+                except Exception as e:
+                    logger.warning(f"[confirm_subscription] Could not retrieve invoice details: {str(e)}")
+            elif promo_code and not promo_applied:
+                logger.warning(f"[confirm_subscription] Promo code {promo_code} was provided but could not be applied")
             
             logger.info(f"""[confirm_subscription] Created subscription:
                 ID: {subscription.id}
                 Status: {subscription.status}
                 Trial End: {subscription.trial_end}
                 Current Period End: {subscription.current_period_end}
+                Promo Code: {promo_code if promo_code else 'None'}
+                Promo Applied: {promo_applied}
             """)
 
             # Обновляем транзакцию
@@ -2438,6 +2530,24 @@ def confirm_subscription(request):
                 payment_transaction.subscription_period_start = timezone.datetime.fromtimestamp(subscription.current_period_start)
             if subscription.current_period_end:
                 payment_transaction.subscription_period_end = timezone.datetime.fromtimestamp(subscription.current_period_end)
+            
+            # Сохраняем промокод и информацию о скидке в метаданные транзакции
+            if payment_transaction.stripe_metadata:
+                payment_transaction.stripe_metadata.update({
+                    'promo_code': promo_code if promo_code else '',
+                    'promo_applied': promo_applied,
+                    'discount_amount': invoice_discount,
+                    'subtotal': invoice_subtotal,
+                    'total': invoice_total
+                })
+            else:
+                payment_transaction.stripe_metadata = {
+                    'promo_code': promo_code if promo_code else '',
+                    'promo_applied': promo_applied,
+                    'discount_amount': invoice_discount,
+                    'subtotal': invoice_subtotal,
+                    'total': invoice_total
+                }
             
             payment_transaction.save()
 
@@ -2488,6 +2598,109 @@ def confirm_subscription(request):
         logger.error(f"[confirm_subscription] Error confirming subscription: {str(e)}")
         return Response(
             {'error': 'Failed to confirm subscription'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_promo_code_info(request):
+    """
+    Возвращает информацию о промокоде из Stripe (скидка, тип скидки)
+    """
+    try:
+        promo_code = request.GET.get('promo_code')
+        
+        if not promo_code:
+            return Response(
+                {'error': 'promo_code parameter is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+        
+        try:
+            # Пытаемся найти promotion code по коду
+            promotion_codes = stripe.PromotionCode.list(active=True, code=promo_code, limit=1)
+            
+            if promotion_codes.data and len(promotion_codes.data) > 0:
+                promotion_code_obj = promotion_codes.data[0]
+                coupon = promotion_code_obj.coupon
+                
+                discount_info = {
+                    'valid': True,
+                    'code': promo_code,
+                    'percent_off': coupon.percent_off,
+                    'amount_off': coupon.amount_off / 100 if coupon.amount_off else None,
+                    'currency': coupon.currency if coupon.amount_off else None,
+                    'duration': coupon.duration,
+                    'name': coupon.name if hasattr(coupon, 'name') else None
+                }
+                
+                logger.info(f"[get_promo_code_info] Found promotion code: {promo_code}, discount: {discount_info}")
+                return Response(discount_info, status=status.HTTP_200_OK)
+            else:
+                # Пытаемся использовать как coupon ID
+                try:
+                    coupon = stripe.Coupon.retrieve(promo_code)
+                    discount_info = {
+                        'valid': True,
+                        'code': promo_code,
+                        'percent_off': coupon.percent_off,
+                        'amount_off': coupon.amount_off / 100 if coupon.amount_off else None,
+                        'currency': coupon.currency if coupon.amount_off else None,
+                        'duration': coupon.duration,
+                        'name': coupon.name if hasattr(coupon, 'name') else None
+                    }
+                    
+                    logger.info(f"[get_promo_code_info] Found coupon by ID: {promo_code}, discount: {discount_info}")
+                    return Response(discount_info, status=status.HTTP_200_OK)
+                except stripe.error.InvalidRequestError:
+                    # Если не найден по ID, пытаемся найти по имени (name)
+                    try:
+                        all_coupons = stripe.Coupon.list(limit=100)
+                        coupon = None
+                        for c in all_coupons.data:
+                            if c.name and c.name.upper() == promo_code.upper():
+                                coupon = c
+                                break
+                        
+                        if coupon:
+                            discount_info = {
+                                'valid': True,
+                                'code': promo_code,
+                                'percent_off': coupon.percent_off,
+                                'amount_off': coupon.amount_off / 100 if coupon.amount_off else None,
+                                'currency': coupon.currency if coupon.amount_off else None,
+                                'duration': coupon.duration,
+                                'name': coupon.name if hasattr(coupon, 'name') else None
+                            }
+                            
+                            logger.info(f"[get_promo_code_info] Found coupon by name: {promo_code}, discount: {discount_info}")
+                            return Response(discount_info, status=status.HTTP_200_OK)
+                        else:
+                            logger.warning(f"[get_promo_code_info] Promo code/coupon not found: {promo_code}")
+                            return Response(
+                                {'valid': False, 'error': 'Promo code not found'}, 
+                                status=status.HTTP_404_NOT_FOUND
+                            )
+                    except Exception as e:
+                        logger.error(f"[get_promo_code_info] Error searching coupon by name: {str(e)}")
+                        return Response(
+                            {'valid': False, 'error': 'Promo code not found'}, 
+                            status=status.HTTP_404_NOT_FOUND
+                        )
+                    
+        except stripe.error.StripeError as e:
+            logger.error(f"[get_promo_code_info] Stripe error: {str(e)}")
+            return Response(
+                {'valid': False, 'error': f'Stripe error: {str(e)}'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+    except Exception as e:
+        logger.error(f"[get_promo_code_info] Error: {str(e)}")
+        return Response(
+            {'valid': False, 'error': 'Failed to get promo code info'}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
@@ -3788,10 +4001,47 @@ def subscribe_black_friday(request):
     
     try:
         user_profile = UserProfile.objects.get(user=request.user)
+        
+        # Проверяем, не подписан ли уже пользователь
+        was_subscribed = user_profile.black_friday_subscribed
+        
         user_profile.black_friday_subscribed = True
         user_profile.save(update_fields=['black_friday_subscribed'])
         
         logger.info(f"[subscribe_black_friday] User {request.user.id} successfully subscribed to Black Friday notifications")
+        
+        # Отправляем письмо только если пользователь еще не был подписан
+        if not was_subscribed:
+            try:
+                # Получаем email из Firebase по uid (который хранится в username)
+                firebase_user = auth.get_user(request.user.username)
+                user_email = firebase_user.email
+                
+                if user_email:
+                    email_service = EmailService()
+                    
+                    html_content = (
+                        "<p>You received this discount earlier than others because you subscribed to the Black Friday Deal notification.</p>"
+                        "<p>😎🚨 <a href='https://upvote.club/dashboard/subscribe?blackfriday=true&notrial=1' target='_blank'>MATE Plan: Only $219 (down from $439)</a> – includes 15,000 points and unlimited tasks creation.</p>"
+                        "<p>🤜🤛 <a href='https://upvote.club/dashboard/subscribe?blackfriday=true&notrial=1' target='_blank'>Buddy Plan: Only $74 (down from $149)</a> – includes 5,000 points and unlimited tasks.</p>"
+                        "<p>Locked-in pricing: Your subscription price is guaranteed for the entire year.</p>"
+                    )
+                    
+                    success = email_service.send_email(
+                        to_email=user_email,
+                        subject='🚨🦩🎁 Early Bird Black Friday Deal 50% Discount on All Annual Plans in your in your box',
+                        html_content=html_content
+                    )
+                    
+                    if success:
+                        logger.info(f"[subscribe_black_friday] Successfully sent Black Friday subscription email to {user_email}")
+                    else:
+                        logger.warning(f"[subscribe_black_friday] Failed to send Black Friday subscription email to {user_email}")
+                else:
+                    logger.error(f"[subscribe_black_friday] No email found in Firebase for user {request.user.username}")
+                    
+            except Exception as e:
+                logger.error(f"[subscribe_black_friday] Error sending Black Friday subscription email: {str(e)}")
         
         return Response({
             'success': True,

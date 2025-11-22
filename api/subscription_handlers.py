@@ -41,9 +41,13 @@ def handle_subscription_payment(event_data):
         customer_id = event_data.get('customer')
         session_id = event_data.get('checkout_session')
         price_id = event_data['lines']['data'][0]['price']['id'] if event_data.get('lines', {}).get('data') else None
-        amount_paid = event_data.get('amount_paid', 0)
+        amount_paid = event_data.get('amount_paid', 0) / 100 if event_data.get('amount_paid') else 0  # конвертируем в доллары
+        subtotal = event_data.get('subtotal', 0) / 100 if event_data.get('subtotal') else 0
+        total = event_data.get('total', 0) / 100 if event_data.get('total') else 0
+        discount_amount = subtotal - total if subtotal > 0 else 0
         
         subscription_metadata = event_data.get('subscription_details', {}).get('metadata', {})
+        promo_code = subscription_metadata.get('promo_code', '')
         lines = event_data.get('lines', {}).get('data', [])
         line_metadata = lines[0].get('metadata', {}) if lines else {}
 
@@ -59,7 +63,11 @@ def handle_subscription_payment(event_data):
             customer_id: {customer_id}
             session_id: {session_id}
             price_id: {price_id}
-            amount_paid: {amount_paid}
+            subtotal: ${subtotal}
+            total: ${total}
+            amount_paid: ${amount_paid}
+            discount_amount: ${discount_amount}
+            promo_code: {promo_code}
             is_trial: {is_trial}
         """)
 
@@ -158,10 +166,11 @@ def handle_subscription_payment(event_data):
                 """)
 
                 # Создаем новую транзакцию для платного периода
+                # amount_paid уже учитывает скидку от Stripe
                 payment_transaction = PaymentTransaction.objects.create(
                     user=previous_transaction.user,
                     points=SUBSCRIPTION_PLAN_CONFIG[plan][period]['points'],
-                    amount=amount_paid/100,
+                    amount=amount_paid,  # уже в долларах и учитывает скидку
                     payment_id=f"sub_{subscription_id}_{timezone.now().strftime('%Y%m%d%H%M%S')}",
                     status='ACTIVE',
                     payment_type='SUBSCRIPTION',
@@ -169,7 +178,14 @@ def handle_subscription_payment(event_data):
                     stripe_customer_id=customer_id,
                     user_has_trial_before=True,
                     trial_end_date=previous_transaction.trial_end_date,
-                    subscription_period_type='MONTHLY' if period == 'monthly' else 'ANNUAL'
+                    subscription_period_type='MONTHLY' if period == 'monthly' else 'ANNUAL',
+                    stripe_metadata={
+                        'event_data': event_data,
+                        'promo_code': promo_code,
+                        'discount_amount': discount_amount,
+                        'subtotal': subtotal,
+                        'total': total
+                    }
                 )
 
                 logger.info(f"""
@@ -235,7 +251,10 @@ def handle_subscription_payment(event_data):
                     User: {user_profile.user.id}
                     Plan: {plan}
                     Status: {payment_transaction.status}
-                    Amount: {payment_transaction.amount}
+                    Subtotal: ${subtotal}
+                    Discount: ${discount_amount}
+                    Amount Paid (after discount): ${payment_transaction.amount}
+                    Promo Code: {promo_code}
                     Points: {payment_transaction.points}
                     Trial End: {payment_transaction.trial_end_date}
                     Period: {payment_transaction.subscription_period_start} - {payment_transaction.subscription_period_end}
@@ -292,10 +311,11 @@ def handle_subscription_payment(event_data):
                 payment_transaction = previous_transaction
             else:
                 # Создаем новую транзакцию только если предыдущая не PENDING
+                # amount_paid уже в долларах и учитывает скидку
                 payment_transaction = PaymentTransaction.objects.create(
                     user=previous_transaction.user,
                     points=SUBSCRIPTION_PLAN_CONFIG[plan][period]['points'],
-                    amount=amount_paid/100,
+                    amount=amount_paid,  # уже в долларах
                     payment_id=f"sub_{subscription_id}_{timezone.now().strftime('%Y%m%d%H%M%S')}",
                     status='PENDING',
                     payment_type='SUBSCRIPTION',
@@ -303,7 +323,14 @@ def handle_subscription_payment(event_data):
                     stripe_customer_id=customer_id,
                     user_has_trial_before=True,
                     trial_end_date=previous_transaction.trial_end_date,
-                    subscription_period_type='MONTHLY' if period == 'monthly' else 'ANNUAL'
+                    subscription_period_type='MONTHLY' if period == 'monthly' else 'ANNUAL',
+                    stripe_metadata={
+                        'event_data': event_data,
+                        'promo_code': promo_code,
+                        'discount_amount': discount_amount,
+                        'subtotal': subtotal,
+                        'total': total
+                    }
                 )
 
             if is_trial:
@@ -341,7 +368,23 @@ def handle_subscription_payment(event_data):
                 if period_data.get('end'):
                     payment_transaction.subscription_period_end = timezone.datetime.fromtimestamp(period_data['end'])
             
-            payment_transaction.stripe_metadata = event_data
+            # Обновляем метаданные с информацией о промокоде и скидке
+            if payment_transaction.stripe_metadata:
+                payment_transaction.stripe_metadata.update({
+                    'event_data': event_data,
+                    'promo_code': promo_code,
+                    'discount_amount': discount_amount,
+                    'subtotal': subtotal,
+                    'total': total
+                })
+            else:
+                payment_transaction.stripe_metadata = {
+                    'event_data': event_data,
+                    'promo_code': promo_code,
+                    'discount_amount': discount_amount,
+                    'subtotal': subtotal,
+                    'total': total
+                }
             payment_transaction.last_webhook_received = timezone.now()
             payment_transaction.save()
 
@@ -350,7 +393,10 @@ def handle_subscription_payment(event_data):
                 User: {user_profile.user.id}
                 Plan: {plan}
                 Status: {payment_transaction.status}
-                Amount: {payment_transaction.amount}
+                Subtotal: ${subtotal}
+                Discount: ${discount_amount}
+                Amount Paid (after discount): ${payment_transaction.amount}
+                Promo Code: {promo_code}
                 Points: {payment_transaction.points}
                 Trial End: {payment_transaction.trial_end_date}
                 Period: {payment_transaction.subscription_period_start} - {payment_transaction.subscription_period_end}
@@ -504,13 +550,33 @@ def handle_subscription_updated(data):
         invoice_data = None
         payment_intent = None
         amount = 0
+        subtotal = 0
+        total = 0
+        discount_amount = 0
+        promo_code = ''
         if latest_invoice_id:
             try:
                 invoice = stripe.Invoice.retrieve(latest_invoice_id)
                 payment_intent = invoice.payment_intent
                 # Конвертируем из центов в доллары
                 amount = float(invoice.amount_paid) / 100 if invoice.amount_paid else 0
+                subtotal = float(invoice.subtotal) / 100 if invoice.subtotal else 0
+                total = float(invoice.total) / 100 if invoice.total else 0
+                discount_amount = subtotal - total if subtotal > 0 else 0
                 invoice_data = invoice
+                
+                # Получаем промокод из метаданных подписки
+                subscription_metadata = data.get('metadata', {})
+                promo_code = subscription_metadata.get('promo_code', '')
+                
+                logger.info(f"""[handle_subscription_updated] Invoice details:
+                    Invoice ID: {latest_invoice_id}
+                    Subtotal: ${subtotal}
+                    Total: ${total}
+                    Amount Paid: ${amount}
+                    Discount: ${discount_amount}
+                    Promo Code: {promo_code}
+                """)
                 
             except Exception as e:
                 logger.error(f"[handle_subscription_updated] Error retrieving invoice: {str(e)}")
@@ -542,10 +608,23 @@ def handle_subscription_updated(data):
                     previous_transaction.save()
                 
                 # Создаем новую транзакцию со статусом ACTIVE
+                # amount уже учитывает скидку от Stripe (amount_paid из invoice)
+                metadata_dict = {
+                    **data,
+                    'invoice_data': invoice_data,
+                    'promo_code': promo_code,
+                    'discount_amount': discount_amount,
+                    'subtotal': subtotal,
+                    'total': total
+                } if invoice_data else {
+                    **data,
+                    'promo_code': promo_code
+                }
+                
                 new_transaction = PaymentTransaction.objects.create(
                     user=previous_transaction.user,
                     points=previous_transaction.points,
-                    amount=amount,  # Теперь устанавливаем правильную сумму
+                    amount=amount,  # amount уже учитывает скидку от Stripe
                     payment_id=f"sub_{uuid.uuid4().hex[:8]}",
                     status='ACTIVE',
                     payment_type='SUBSCRIPTION',
@@ -553,10 +632,7 @@ def handle_subscription_updated(data):
                     stripe_subscription_id=subscription_id,
                     stripe_customer_id=customer_id,
                     stripe_payment_intent_id=payment_intent,
-                    stripe_metadata={
-                        **data,
-                        'invoice_data': invoice_data
-                    } if invoice_data else data,
+                    stripe_metadata=metadata_dict,
                     user_has_trial_before=True
                 )
                 
@@ -592,6 +668,9 @@ def handle_invoice_payment_succeeded(data):
         customer_id = data.get('customer')
         payment_intent = data.get('payment_intent')
         amount_paid = float(data.get('amount_paid', 0)) / 100  # конвертируем центы в доллары
+        subtotal = float(data.get('subtotal', 0)) / 100  # сумма до скидки
+        total = float(data.get('total', 0)) / 100  # итоговая сумма (уже со скидкой)
+        discount_amount = subtotal - total if subtotal > 0 else 0
         
         # Получаем данные о периоде подписки
         period_start = data.get('period_start')
@@ -600,6 +679,19 @@ def handle_invoice_payment_succeeded(data):
         # Получаем метаданные подписки
         subscription_details = data.get('subscription_details', {})
         subscription_metadata = subscription_details.get('metadata', {})
+        promo_code = subscription_metadata.get('promo_code', '')
+        
+        # Получаем информацию о скидках из invoice
+        discounts = data.get('discounts', [])
+        discount_info = []
+        if discounts:
+            for discount in discounts:
+                discount_info.append({
+                    'coupon': discount.get('coupon', {}).get('id', ''),
+                    'promotion_code': discount.get('promotion_code', ''),
+                    'amount_off': discount.get('amount_off', 0) / 100 if discount.get('amount_off') else 0,
+                    'percent_off': discount.get('percent_off', 0)
+                })
         
         # Находим последнюю транзакцию для этой подписки
         previous_transaction = PaymentTransaction.objects.filter(
@@ -614,7 +706,12 @@ def handle_invoice_payment_succeeded(data):
             [handle_invoice_payment_succeeded] Processing payment:
             Subscription ID: {subscription_id}
             Previous Transaction Status: {previous_transaction.status if previous_transaction else 'None'}
-            Amount Paid: {amount_paid}
+            Subtotal: ${subtotal}
+            Total: ${total}
+            Amount Paid: ${amount_paid}
+            Discount Amount: ${discount_amount}
+            Promo Code: {promo_code}
+            Discounts: {discount_info}
             Period: {period_start} - {period_end}
         """)
         
@@ -626,12 +723,29 @@ def handle_invoice_payment_succeeded(data):
             # Если это первый платёж после trial, переводим транзакцию в ACTIVE и начисляем баллы
             if previous_transaction.status == 'TRIAL' and amount_paid > 0:
                 previous_transaction.status = 'ACTIVE'
-                previous_transaction.amount = amount_paid
+                previous_transaction.amount = amount_paid  # amount_paid уже учитывает скидку от Stripe
                 if period_end:
                     previous_transaction.subscription_period_end = datetime.fromtimestamp(period_end)
                 if period_start:
                     previous_transaction.subscription_period_start = datetime.fromtimestamp(period_start)
-                previous_transaction.stripe_metadata = data
+                
+                # Сохраняем информацию о промокоде и скидке в метаданные
+                if previous_transaction.stripe_metadata:
+                    previous_transaction.stripe_metadata.update({
+                        'invoice_data': data,
+                        'promo_code': promo_code,
+                        'discount_amount': discount_amount,
+                        'subtotal': subtotal,
+                        'total': total
+                    })
+                else:
+                    previous_transaction.stripe_metadata = {
+                        'invoice_data': data,
+                        'promo_code': promo_code,
+                        'discount_amount': discount_amount,
+                        'subtotal': subtotal,
+                        'total': total
+                    }
                 previous_transaction.save()
                 
                 # Начисляем баллы пользователю
@@ -645,7 +759,10 @@ def handle_invoice_payment_succeeded(data):
                     User: {user_profile.user.id}
                     Subscription: {subscription_id}
                     Points: {previous_transaction.points}
-                    Amount: {amount_paid}
+                    Subtotal: ${subtotal}
+                    Discount: ${discount_amount}
+                    Amount Paid (after discount): ${amount_paid}
+                    Promo Code: {promo_code}
                     Old Balance: {old_balance}
                     New Balance: {user_profile.balance}
                     Period: {previous_transaction.subscription_period_start} - {previous_transaction.subscription_period_end}
