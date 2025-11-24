@@ -939,6 +939,134 @@ class UserProfileAdmin(admin.ModelAdmin):
             messages.error(request, f'Error saving user profile: {str(e)}')
             super().save_model(request, obj, form, change)
 
+    actions = ['export_users_with_firebase_email']
+    
+    def export_users_with_firebase_email(self, request, queryset):
+        """Экспортирует пользователей с email из Firebase и пометкой об отключенных email"""
+        response = HttpResponse(content_type='text/csv; charset=utf-8')
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        response['Content-Disposition'] = f'attachment; filename="users_export_{timestamp}.csv"'
+        
+        writer = csv.writer(response)
+        
+        # Заголовки CSV
+        headers = [
+            'User ID',
+            'Firebase UID (Username)',
+            'Firebase Email',
+            'Email Disabled in Firebase',
+            'Email Verified',
+            'User Status',
+            'Country Code',
+            'Chosen Country',
+            'Balance',
+            'Available Tasks',
+            'Completed Tasks Count',
+            'Is Ambassador',
+            'Is Affiliate Partner',
+            'Black Friday Subscribed',
+            'Auto Actions Enabled',
+            'Twitter Account',
+            'Twitter Verification Status',
+            'Referrer URL',
+            'Landing URL',
+            'Device Type',
+            'OS Name',
+            'OS Version',
+            'Created At',
+        ]
+        writer.writerow(headers)
+        
+        # Оптимизируем запросы
+        profiles = queryset.select_related('user', 'invited_by', 'invite_code')
+        
+        count = 0
+        error_count = 0
+        
+        for profile in profiles:
+            try:
+                user = profile.user
+                firebase_uid = user.username
+                
+                # Получаем данные из Firebase
+                firebase_email = ''
+                email_disabled = False
+                email_verified = False
+                firebase_error = ''
+                
+                if firebase_uid:
+                    try:
+                        from firebase_admin import auth
+                        firebase_user = auth.get_user(firebase_uid)
+                        firebase_email = firebase_user.email or ''
+                        email_disabled = firebase_user.disabled if hasattr(firebase_user, 'disabled') else False
+                        email_verified = firebase_user.email_verified if hasattr(firebase_user, 'email_verified') else False
+                    except auth.UserNotFoundError:
+                        firebase_error = 'User not found in Firebase'
+                        logger.warning(f"[export_users] Firebase user not found: {firebase_uid}")
+                    except Exception as e:
+                        firebase_error = f'Error: {str(e)[:50]}'
+                        logger.error(f"[export_users] Error getting Firebase user {firebase_uid}: {str(e)}")
+                
+                # Если email отключен, добавляем пометку
+                email_display = firebase_email
+                if email_disabled:
+                    email_display = f"{firebase_email} [DISABLED - DO NOT SEND EMAIL]"
+                elif firebase_error:
+                    email_display = f"[ERROR: {firebase_error}]"
+                
+                # Формируем строку данных
+                row = [
+                    user.id,
+                    firebase_uid,
+                    email_display,
+                    'YES' if email_disabled else 'NO',
+                    'YES' if email_verified else 'NO',
+                    profile.status or '',
+                    profile.country_code or '',
+                    profile.chosen_country or '',
+                    profile.balance or 0,
+                    profile.available_tasks or 0,
+                    profile.completed_tasks_count or 0,
+                    'YES' if profile.is_ambassador else 'NO',
+                    'YES' if profile.is_affiliate_partner else 'NO',
+                    'YES' if profile.black_friday_subscribed else 'NO',
+                    'YES' if profile.auto_actions_enabled else 'NO',
+                    profile.twitter_account or '',
+                    profile.twitter_verification_status or '',
+                    profile.referrer_url or '',
+                    profile.landing_url or '',
+                    profile.device_type or '',
+                    profile.os_name or '',
+                    profile.os_version or '',
+                    user.date_joined.strftime('%Y-%m-%d %H:%M:%S') if user.date_joined else '',
+                ]
+                
+                writer.writerow(row)
+                count += 1
+                
+            except Exception as e:
+                error_count += 1
+                logger.error(f"[export_users] Error exporting user profile {getattr(profile, 'id', '?')}: {str(e)}")
+                continue
+        
+        logger.info(f"[export_users] Exported {count} user profiles to CSV (errors: {error_count})")
+        if error_count > 0:
+            self.message_user(
+                request, 
+                f'Successfully exported {count} user profiles to CSV. {error_count} errors occurred.', 
+                messages.WARNING
+            )
+        else:
+            self.message_user(
+                request, 
+                f'Successfully exported {count} user profiles to CSV', 
+                messages.SUCCESS
+            )
+        return response
+    
+    export_users_with_firebase_email.short_description = "📥 Download selected users with Firebase email (includes disabled email warning)"
+
 @admin.register(EmailCampaign)
 class EmailCampaignAdmin(admin.ModelAdmin):
     list_display = ('subject', 'subscription_type', 'status', 'created_at', 'sent_at')
