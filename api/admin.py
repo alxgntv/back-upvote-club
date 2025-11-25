@@ -1414,6 +1414,110 @@ class UserSocialProfileAdmin(admin.ModelAdmin):
                 )
     sync_profiles.short_description = "Sync selected profiles"
 
+    actions = ['export_unique_users_firebase_data', 'sync_profiles']
+    
+    def export_unique_users_firebase_data(self, request, queryset):
+        """Экспортирует email и имена из Firebase для всех уникальных пользователей выбранных профилей"""
+        response = HttpResponse(content_type='text/csv; charset=utf-8')
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        response['Content-Disposition'] = f'attachment; filename="unique_users_firebase_data_{timestamp}.csv"'
+        
+        writer = csv.writer(response)
+        
+        # Заголовки CSV
+        headers = [
+            'User ID',
+            'Firebase UID (Username)',
+            'Firebase Email',
+            'Firebase Display Name',
+            'Email Disabled in Firebase',
+            'Email Verified',
+            'Social Profiles Count',
+            'Social Networks',
+        ]
+        writer.writerow(headers)
+        
+        # Получаем уникальных пользователей из выбранных профилей
+        unique_user_ids = queryset.values_list('user_id', flat=True).distinct()
+        unique_users = User.objects.filter(id__in=unique_user_ids).select_related('userprofile')
+        
+        count = 0
+        error_count = 0
+        
+        for user in unique_users:
+            try:
+                firebase_uid = user.username
+                
+                # Получаем данные из Firebase
+                firebase_email = ''
+                firebase_display_name = ''
+                email_disabled = False
+                email_verified = False
+                firebase_error = ''
+                
+                if firebase_uid:
+                    try:
+                        firebase_user = auth.get_user(firebase_uid)
+                        firebase_email = firebase_user.email or ''
+                        firebase_display_name = firebase_user.display_name or ''
+                        email_disabled = firebase_user.disabled if hasattr(firebase_user, 'disabled') else False
+                        email_verified = firebase_user.email_verified if hasattr(firebase_user, 'email_verified') else False
+                    except auth.UserNotFoundError:
+                        firebase_error = 'User not found in Firebase'
+                        logger.warning(f"[export_unique_users_firebase_data] Firebase user not found: {firebase_uid}")
+                    except Exception as e:
+                        firebase_error = f'Error: {str(e)[:50]}'
+                        logger.error(f"[export_unique_users_firebase_data] Error getting Firebase user {firebase_uid}: {str(e)}")
+                
+                # Получаем информацию о социальных профилях пользователя
+                user_profiles = queryset.filter(user=user)
+                social_profiles_count = user_profiles.count()
+                social_networks = ', '.join(user_profiles.values_list('social_network__name', flat=True).distinct())
+                
+                # Если email отключен, добавляем пометку
+                email_display = firebase_email
+                if email_disabled:
+                    email_display = f"{firebase_email} [DISABLED - DO NOT SEND EMAIL]"
+                elif firebase_error:
+                    email_display = f"[ERROR: {firebase_error}]"
+                
+                # Формируем строку данных
+                row = [
+                    user.id,
+                    firebase_uid,
+                    email_display,
+                    firebase_display_name,
+                    'YES' if email_disabled else 'NO',
+                    'YES' if email_verified else 'NO',
+                    social_profiles_count,
+                    social_networks,
+                ]
+                
+                writer.writerow(row)
+                count += 1
+                
+            except Exception as e:
+                error_count += 1
+                logger.error(f"[export_unique_users_firebase_data] Error exporting user {getattr(user, 'id', '?')}: {str(e)}")
+                continue
+        
+        logger.info(f"[export_unique_users_firebase_data] Exported {count} unique users to CSV (errors: {error_count})")
+        if error_count > 0:
+            self.message_user(
+                request, 
+                f'Successfully exported {count} unique users to CSV. {error_count} errors occurred.', 
+                messages.WARNING
+            )
+        else:
+            self.message_user(
+                request, 
+                f'Successfully exported {count} unique users to CSV', 
+                messages.SUCCESS
+            )
+        return response
+    
+    export_unique_users_firebase_data.short_description = "📥 Export unique users Firebase data (email & name)"
+
     def save_model(self, request, obj, form, change):
         # Проверяем, был ли статус изменён на VERIFIED или REJECTED
         send_approval_email = False
