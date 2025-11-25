@@ -1432,8 +1432,10 @@ class UserSocialProfileAdmin(admin.ModelAdmin):
             'Firebase Display Name',
             'Email Disabled in Firebase',
             'Email Verified',
+            'Chosen Country',
             'Social Profiles Count',
             'Social Networks',
+            'Verified Profile URL',
         ]
         writer.writerow(headers)
         
@@ -1474,6 +1476,23 @@ class UserSocialProfileAdmin(admin.ModelAdmin):
                 social_profiles_count = user_profiles.count()
                 social_networks = ', '.join(user_profiles.values_list('social_network__name', flat=True).distinct())
                 
+                # Получаем chosen_country из UserProfile
+                chosen_country = ''
+                try:
+                    if hasattr(user, 'userprofile') and user.userprofile:
+                        chosen_country = user.userprofile.chosen_country or ''
+                except Exception:
+                    pass
+                
+                # Получаем ссылку на верифицированный профиль
+                verified_profile_url = ''
+                try:
+                    verified_profile = user_profiles.filter(verification_status='VERIFIED').first()
+                    if verified_profile and verified_profile.profile_url:
+                        verified_profile_url = verified_profile.profile_url
+                except Exception:
+                    pass
+                
                 # Если email отключен, добавляем пометку
                 email_display = firebase_email
                 if email_disabled:
@@ -1489,8 +1508,10 @@ class UserSocialProfileAdmin(admin.ModelAdmin):
                     firebase_display_name,
                     'YES' if email_disabled else 'NO',
                     'YES' if email_verified else 'NO',
+                    chosen_country,
                     social_profiles_count,
                     social_networks,
+                    verified_profile_url,
                 ]
                 
                 writer.writerow(row)
