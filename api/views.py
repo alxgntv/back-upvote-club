@@ -3839,10 +3839,23 @@ def telegram_webhook(request):
         if not callback_query:
             return Response({'status': 'ok'})
         
+        callback_query_id = callback_query.get('id')
         callback_data = callback_query.get('data', '')
         message = callback_query.get('message', {})
         message_id = message.get('message_id')
         chat_id = message.get('chat', {}).get('id')
+        
+        # Функция для ответа на callback_query
+        def answer_callback_query(text=''):
+            """Отвечает на callback_query, чтобы Telegram не отправлял повторные запросы"""
+            if not callback_query_id:
+                return
+            try:
+                TELEGRAM_BOT_TOKEN = '8045516781:AAFdnzHGd78LIeCyW5ygkO8yVk1jY3p5J1Y'
+                answer_url = f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery'
+                requests.post(answer_url, json={'callback_query_id': callback_query_id, 'text': text}, timeout=5)
+            except Exception:
+                pass
         
         # Парсим callback_data: "moderate_profile_{profile_id}_{action}"
         if callback_data.startswith('moderate_profile_'):
@@ -3855,6 +3868,11 @@ def telegram_webhook(request):
                     profile = UserSocialProfile.objects.get(id=profile_id)
                     
                     if action == 'verify':
+                        # Проверяем, что профиль еще не верифицирован (защита от дублирования)
+                        if profile.verification_status == 'VERIFIED':
+                            answer_callback_query('Profile already verified')
+                            return Response({'status': 'ok'})
+                        
                         # Верифицируем профиль
                         profile.verification_status = 'VERIFIED'
                         profile.is_verified = True
@@ -3881,14 +3899,21 @@ def telegram_webhook(request):
                                     subject='Your profile has been approved!',
                                     html_content=plain_text
                                 )
-                                logger.info(f"[Telegram] Sent approval email to user {profile.user.username} ({user_email}) for social profile {profile.id}")
-                        except Exception as e:
-                            logger.error(f"[Telegram] Error sending approval email for social profile {profile.id}: {str(e)}")
+                        except Exception:
+                            pass
+                        
+                        # Отвечаем на callback_query
+                        answer_callback_query('Profile verified')
                         
                         # Отправляем ответ в Telegram
                         send_telegram_message(chat_id, f"✅ Profile {profile.username} has been verified!", message_id)
                         
                     elif action == 'reject_no_emoji':
+                        # Проверяем, что профиль еще не отклонен с этой причиной (защита от дублирования)
+                        if profile.verification_status == 'REJECTED' and profile.rejection_reason == 'NO_EMOJI':
+                            answer_callback_query('Profile already rejected')
+                            return Response({'status': 'ok'})
+                        
                         # Отклоняем профиль - нет эмоджи
                         profile.verification_status = 'REJECTED'
                         profile.is_verified = False
@@ -3909,20 +3934,29 @@ def telegram_webhook(request):
                                 html_content = (
                                     '<p>Your social profile was <b>soft-rejected</b> because we could not find a finger print emoji 🧗‍♂️😄🤩🤖😛 on your BIO at profile page.</p>'
                                     '<p>Please add emoji finger print 🧗‍♂️😄🤩🤖😛 to your profile BIO or display name and submit it again</p>'
+                                    '<br>'
+                                    '<p>After verification, you can remove the EMOJI finger print from your BIO</p>'
                                 )
                                 email_service.send_email(
                                     to_email=user_email,
-                                    subject='Your social profile was soft-rejected - No Emoji Finger Print added',
+                                    subject=f'Profile was soft-rejected - No Emoji 🧗‍♂️😄🤩🤖😛 found in your BIO',
                                     html_content=html_content
                                 )
-                                logger.info(f"[Telegram] Sent rejection email to user {profile.user.username} ({user_email}) for social profile {profile.id} - No Emoji")
-                        except Exception as e:
-                            logger.error(f"[Telegram] Error sending rejection email for social profile {profile.id}: {str(e)}")
+                        except Exception:
+                            pass
+                        
+                        # Отвечаем на callback_query
+                        answer_callback_query('Profile rejected')
                         
                         # Отправляем ответ в Telegram
                         send_telegram_message(chat_id, f"❌ Profile {profile.username} rejected - No Emoji", message_id)
                         
                     elif action == 'reject_criteria':
+                        # Проверяем, что профиль еще не отклонен с этой причиной (защита от дублирования)
+                        if profile.verification_status == 'REJECTED' and profile.rejection_reason == 'DOES_NOT_MEET_CRITERIA':
+                            answer_callback_query('Profile already rejected')
+                            return Response({'status': 'ok'})
+                        
                         # Отклоняем профиль - не соответствует критериям
                         profile.verification_status = 'REJECTED'
                         profile.is_verified = False
@@ -3948,23 +3982,25 @@ def telegram_webhook(request):
                                     subject='Your social profile was rejected - Does not meet criteria',
                                     html_content=html_content
                                 )
-                                logger.info(f"[Telegram] Sent rejection email to user {profile.user.username} ({user_email}) for social profile {profile.id} - Does not meet criteria")
-                        except Exception as e:
-                            logger.error(f"[Telegram] Error sending rejection email for social profile {profile.id}: {str(e)}")
+                        except Exception:
+                            pass
+                        
+                        # Отвечаем на callback_query
+                        answer_callback_query('Profile rejected')
                         
                         # Отправляем ответ в Telegram
                         send_telegram_message(chat_id, f"❌ Profile {profile.username} rejected - Does not meet criteria", message_id)
                     
                 except UserSocialProfile.DoesNotExist:
+                    answer_callback_query('Profile not found')
                     send_telegram_message(chat_id, "❌ Profile not found", message_id)
                 except Exception as e:
-                    logger.error(f"[Telegram] Error processing moderation action: {str(e)}")
+                    answer_callback_query('Error occurred')
                     send_telegram_message(chat_id, f"❌ Error: {str(e)}", message_id)
         
         return Response({'status': 'ok'})
         
     except Exception as e:
-        logger.error(f"[Telegram] Error in webhook: {str(e)}")
         return Response({'status': 'error', 'message': str(e)}, status=500)
 
 
