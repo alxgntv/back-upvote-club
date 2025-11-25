@@ -9,7 +9,8 @@ from .views import (
     report_task, get_sitemap_data, create_subscription, withdrawal_info, 
     create_withdrawal, cancel_withdrawal, update_withdrawal_addresses, 
     task_completion_stats, create_subscription_intent, confirm_subscription,
-    get_verified_accounts_count, subscribe_black_friday, get_promo_code_info
+    get_verified_accounts_count, subscribe_black_friday, get_promo_code_info,
+    tasks1
 )
 from .stripe_webhooks import stripe_webhook
 from .views_landings import ActionLandingViewSet
@@ -38,6 +39,7 @@ urlpatterns = [
     path('generate-invite-code/', views.generate_invite_code, name='generate_invite_code'),
     path('active-invite-code/', views.get_active_invite_code, name='get_active_invite_code'),
     path('tasks/my_tasks/', views.TaskViewSet.as_view({'get': 'my_tasks'}), name='my-tasks'),
+    path('tasks1/', tasks1, name='tasks1'),
     path('purchase-points/', views.purchase_points, name='purchase-points'),
     path('markdownx/', include('markdownx.urls')),
     path('admin/metrics/', business_metrics, name='business_metrics'),

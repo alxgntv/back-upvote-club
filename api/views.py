@@ -540,7 +540,54 @@ class TaskViewSet(viewsets.ModelViewSet):
         except Exception as e:
             raise ValidationError("Error creating task. Please try again later.")
 
- 
+
+@api_view(['GET'])
+@permission_classes([permissions.AllowAny])
+def tasks1(request):
+    """
+    Возвращает задания только от авторов из tier1 стран (BONUS_ACTION_COUNTRIES).
+    Сортировка: сначала закрепленные (is_pinned=True), потом по дате создания (created_at).
+    Страна определяется по chosen_country в UserProfile.
+    Поддерживает фильтрацию по social_network через query параметр.
+    """
+    try:
+        social_network_code = request.query_params.get('social_network')
+        
+        # Фильтруем задания от авторов из tier1 стран
+        # Исключаем случаи, когда chosen_country равен NULL или не входит в BONUS_ACTION_COUNTRIES
+        tasks = Task.objects.filter(
+            status='ACTIVE',
+            creator__userprofile__chosen_country__in=BONUS_ACTION_COUNTRIES,
+            creator__userprofile__chosen_country__isnull=False
+        )
+        
+        # Применяем фильтрацию по социальной сети, если указана
+        if social_network_code:
+            tasks = tasks.filter(social_network__code=social_network_code.upper())
+        
+        tasks = tasks.select_related(
+            'creator',
+            'creator__userprofile',
+            'social_network'
+        ).prefetch_related(
+            'completions',
+            'completions__user',
+            Prefetch(
+                'completions__user__social_profiles',
+                queryset=UserSocialProfile.objects.all(),
+                to_attr='user_social_profiles'
+            )
+        )
+        
+        # Сортировка: сначала закрепленные, потом по дате создания
+        tasks = tasks.order_by('-is_pinned', '-created_at')
+        
+        serializer = TaskSerializer(tasks, many=True, context={'request': request})
+        return Response(serializer.data)
+    
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated if settings.COMPLETE_TASK_REQUIRES_AUTH else permissions.AllowAny])
