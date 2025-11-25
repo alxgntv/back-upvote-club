@@ -549,6 +549,7 @@ def tasks1(request):
     Сортировка: сначала закрепленные (is_pinned=True), потом по дате создания (created_at).
     Страна определяется по chosen_country в UserProfile.
     Поддерживает фильтрацию по social_network через query параметр.
+    Исключает задания, которые пользователь уже выполнил (по ID и по нормализованному URL).
     """
     try:
         social_network_code = request.query_params.get('social_network')
@@ -564,6 +565,106 @@ def tasks1(request):
         # Применяем фильтрацию по социальной сети, если указана
         if social_network_code:
             tasks = tasks.filter(social_network__code=social_network_code.upper())
+        
+        # Фильтрация выполненных заданий (если пользователь авторизован)
+        user = getattr(request, 'user', None)
+        if user and user.is_authenticated:
+            # 1. Исключаем задания по ID (которые пользователь уже выполнил)
+            completed_task_ids = set(TaskCompletion.objects.filter(user=user).values_list('task_id', flat=True))
+            if completed_task_ids:
+                tasks = tasks.exclude(id__in=completed_task_ids)
+            
+            # 2. Исключаем задания с таким же нормализованным URL
+            # Получаем комбинации выполненных заданий
+            completed_combinations = TaskCompletion.objects.filter(
+                user=user
+            ).values_list(
+                'task__post_url',
+                'task__type',
+                'task__social_network_id'
+            ).distinct()
+            
+            # Функция нормализации URL (та же, что в TaskViewSet)
+            def _normalize_url(raw_url: str) -> str:
+                """Normalize URL for duplicate detection.
+                Rules:
+                  - ignore query and fragment
+                  - lowercase hostname
+                  - drop trailing '/'
+                  - treat http/https as the same (ignore scheme)
+                  - strip leading 'www.'
+                Returns a comparison key in the form 'host/path'.
+                """
+                try:
+                    from urllib.parse import urlsplit
+                    parts = urlsplit(raw_url)
+                    netloc = parts.netloc.lower()
+                    # unify common mobile/bare subdomains
+                    for prefix in ('www.', 'm.', 'mobile.', 'vm.'):
+                        if netloc.startswith(prefix):
+                            netloc = netloc[len(prefix):]
+                            break
+                    # map known domain aliases to a canonical host
+                    if netloc in {'youtu.be', 'youtube-nocookie.com'}:
+                        netloc = 'youtube.com'
+                    path = parts.path.rstrip('/') if parts.path != '/' else ''
+                    return f"{netloc}{path}"
+                except Exception:
+                    safe = (raw_url or '')
+                    # remove scheme
+                    if '://' in safe:
+                        safe = safe.split('://', 1)[1]
+                    # strip query/fragment
+                    safe = safe.split('#')[0].split('?')[0]
+                    safe = safe.rstrip('/')
+                    # strip common prefixes
+                    for prefix in ('www.', 'm.', 'mobile.', 'vm.'):
+                        if safe.startswith(prefix):
+                            safe = safe[len(prefix):]
+                            break
+                    # normalize known domain aliases without full parsing
+                    safe = safe.lower()
+                    host, _, rest = safe.partition('/')
+                    if host in {'youtu.be', 'youtube-nocookie.com'}:
+                        host = 'youtube.com'
+                    return host + (('/' + rest) if rest else '')
+            
+            # Собираем множество завершённых комбинаций с нормализованным post_url
+            completed_combo_set = set(
+                (
+                    _normalize_url(url or ''),
+                    t_type,
+                    sn_id,
+                )
+                for (url, t_type, sn_id) in completed_combinations
+            )
+            
+            # Исключаем задания по нормализованной комбинации
+            if completed_combo_set:
+                try:
+                    # Ограничим кандидатов по типам и соцсетям для эффективности
+                    types_set = list({t for (_, t, _) in completed_combo_set if t is not None})
+                    sn_ids_set = list({sn for (_, _, sn) in completed_combo_set if sn is not None})
+                    
+                    if types_set and sn_ids_set:
+                        candidates = tasks.filter(
+                            type__in=types_set,
+                            social_network_id__in=sn_ids_set
+                        ).values('id', 'post_url', 'type', 'social_network_id')
+                        
+                        ids_to_exclude = []
+                        for c in candidates:
+                            if (
+                                _normalize_url(c.get('post_url') or ''),
+                                c.get('type'),
+                                c.get('social_network_id'),
+                            ) in completed_combo_set:
+                                ids_to_exclude.append(c['id'])
+                        
+                        if ids_to_exclude:
+                            tasks = tasks.exclude(id__in=ids_to_exclude)
+                except Exception:
+                    pass
         
         tasks = tasks.select_related(
             'creator',
