@@ -3873,8 +3873,8 @@ def telegram_webhook(request):
                             if user_email:
                                 email_service = EmailService()
                                 plain_text = (
-                                    'Your profile has been approved!\n'
-                                    'You can now complete tasks and earn points: https://upvote.club/dashboard'
+                                    'Congratulations! Your profile has been approved!\n'
+                                    'PLEASE REMOVE EMOJI FROM YOUR BIO: 🧗‍♂️😄🤩🤖😛 !IMPORTANT!'
                                 )
                                 email_service.send_email(
                                     to_email=user_email,
