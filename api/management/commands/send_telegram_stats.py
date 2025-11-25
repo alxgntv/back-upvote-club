@@ -3,6 +3,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.contrib.auth.models import User
 from api.models import Task, TaskCompletion, PaymentTransaction
+from api.constants import BONUS_ACTION_COUNTRIES
 import logging
 from django.db.models import Avg
 from datetime import timedelta
@@ -135,6 +136,136 @@ class Command(BaseCommand):
         ).extra(where=['actions_required - actions_completed = 1']).count()
         logger.info(f'[TelegramStats] Tasks needing exactly 1 action to complete: {almost_completed_tasks}')
 
+        # ========== TIER1 COUNTRIES STATS ==========
+        logger.info('[TelegramStats] Calculating TIER1 countries stats')
+        
+        # TIER1: 1. Сколько выполнено заданий за прошлые сутки (от пользователей TIER1)
+        tier1_completed_tasks_count = TaskCompletion.objects.filter(
+            created_at__gte=start,
+            created_at__lt=end,
+            user__userprofile__chosen_country__in=BONUS_ACTION_COUNTRIES,
+            user__userprofile__chosen_country__isnull=False
+        ).count()
+        logger.info(f'[TelegramStats] TIER1: Completed tasks in last day: {tier1_completed_tasks_count}')
+
+        # TIER1: 2. Сколько пользователей было зарегано (из TIER1)
+        tier1_new_users_count = User.objects.filter(
+            date_joined__gte=start,
+            date_joined__lt=end,
+            userprofile__chosen_country__in=BONUS_ACTION_COUNTRIES,
+            userprofile__chosen_country__isnull=False
+        ).count()
+        logger.info(f'[TelegramStats] TIER1: New users registered in last day: {tier1_new_users_count}')
+
+        # TIER1: 3. Сколько новых заданий было создано (от авторов TIER1)
+        tier1_new_tasks_count = Task.objects.filter(
+            created_at__gte=start,
+            created_at__lt=end,
+            creator__userprofile__chosen_country__in=BONUS_ACTION_COUNTRIES,
+            creator__userprofile__chosen_country__isnull=False
+        ).count()
+        logger.info(f'[TelegramStats] TIER1: New tasks created in last day: {tier1_new_tasks_count}')
+
+        # TIER1: 4. Сколько заданий в статусе Complete (всего, от авторов TIER1)
+        tier1_total_completed_tasks = Task.objects.filter(
+            status='COMPLETED',
+            creator__userprofile__chosen_country__in=BONUS_ACTION_COUNTRIES,
+            creator__userprofile__chosen_country__isnull=False
+        ).count()
+        logger.info(f'[TelegramStats] TIER1: Total tasks in status COMPLETED: {tier1_total_completed_tasks}')
+
+        # TIER1: 4.1. Сколько заданий перешли в статус complete за прошедшие сутки (от авторов TIER1)
+        tier1_completed_yesterday_qs = Task.objects.filter(
+            status='COMPLETED',
+            completed_at__gte=start,
+            completed_at__lt=end,
+            creator__userprofile__chosen_country__in=BONUS_ACTION_COUNTRIES,
+            creator__userprofile__chosen_country__isnull=False
+        )
+        tier1_completed_yesterday_count = tier1_completed_yesterday_qs.count()
+        logger.info(f'[TelegramStats] TIER1: Tasks completed (COMPLETED) yesterday: {tier1_completed_yesterday_count}')
+
+        # TIER1: 4.2. Среднее время выполнения задач, завершённых за сутки (от авторов TIER1)
+        tier1_completed_yesterday_with_duration = tier1_completed_yesterday_qs.exclude(completion_duration__isnull=True)
+        tier1_avg_completion_time_yesterday = tier1_completed_yesterday_with_duration.aggregate(avg=Avg('completion_duration'))['avg']
+        logger.info(f'[TelegramStats] TIER1: Tasks with completion_duration yesterday: {tier1_completed_yesterday_with_duration.count()}')
+        logger.info(f'[TelegramStats] TIER1: Avg completion time for tasks completed yesterday: {tier1_avg_completion_time_yesterday}')
+
+        # TIER1: 4.2.1. Медиана времени выполнения задач, завершённых за сутки (от авторов TIER1)
+        tier1_durations = list(tier1_completed_yesterday_with_duration.values_list('completion_duration', flat=True))
+        tier1_durations = [d for d in tier1_durations if d is not None]
+        tier1_durations_sorted = sorted(tier1_durations, key=lambda x: x.total_seconds())
+        tier1_median_completion_time_yesterday = None
+        if tier1_durations_sorted:
+            n = len(tier1_durations_sorted)
+            mid = n // 2
+            if n % 2 == 1:
+                tier1_median_completion_time_yesterday = tier1_durations_sorted[mid]
+            else:
+                tier1_median_completion_time_yesterday = tier1_durations_sorted[mid - 1] + (tier1_durations_sorted[mid] - tier1_durations_sorted[mid - 1]) / 2
+        logger.info(f'[TelegramStats] TIER1: Median completion time for tasks completed yesterday: {tier1_median_completion_time_yesterday}')
+        tier1_median_completion_time_yesterday_str = format_timedelta(tier1_median_completion_time_yesterday)
+        tier1_avg_completion_time_yesterday_str = format_timedelta(tier1_avg_completion_time_yesterday)
+
+        # TIER1: 4.3. Сколько заданий ещё не завершено (статус ACTIVE, от авторов TIER1)
+        tier1_active_tasks_count = Task.objects.filter(
+            status='ACTIVE',
+            creator__userprofile__chosen_country__in=BONUS_ACTION_COUNTRIES,
+            creator__userprofile__chosen_country__isnull=False
+        ).count()
+        logger.info(f'[TelegramStats] TIER1: Tasks in status ACTIVE (not completed): {tier1_active_tasks_count}')
+
+        # TIER1: 4.4. Сколько новых ACTIVE задач появилось за прошедшие сутки (от авторов TIER1)
+        tier1_active_tasks_yesterday_count = Task.objects.filter(
+            status='ACTIVE',
+            created_at__gte=start,
+            created_at__lt=end,
+            creator__userprofile__chosen_country__in=BONUS_ACTION_COUNTRIES,
+            creator__userprofile__chosen_country__isnull=False
+        ).count()
+        logger.info(f'[TelegramStats] TIER1: New ACTIVE tasks created yesterday: {tier1_active_tasks_yesterday_count}')
+
+        # TIER1: 5. Подписки TRIAL (от пользователей TIER1)
+        tier1_total_trial_subs = PaymentTransaction.objects.filter(
+            status='TRIAL',
+            user__userprofile__chosen_country__in=BONUS_ACTION_COUNTRIES,
+            user__userprofile__chosen_country__isnull=False
+        ).count()
+        tier1_trial_subs_yesterday = PaymentTransaction.objects.filter(
+            status='TRIAL',
+            created_at__gte=start,
+            created_at__lt=end,
+            user__userprofile__chosen_country__in=BONUS_ACTION_COUNTRIES,
+            user__userprofile__chosen_country__isnull=False
+        ).count()
+        logger.info(f'[TelegramStats] TIER1: Total TRIAL subscriptions: {tier1_total_trial_subs}')
+        logger.info(f'[TelegramStats] TIER1: TRIAL subscriptions yesterday: {tier1_trial_subs_yesterday}')
+
+        # TIER1: 6. Подписки ACTIVE (от пользователей TIER1)
+        tier1_total_active_subs = PaymentTransaction.objects.filter(
+            status='ACTIVE',
+            user__userprofile__chosen_country__in=BONUS_ACTION_COUNTRIES,
+            user__userprofile__chosen_country__isnull=False
+        ).count()
+        tier1_active_subs_yesterday = PaymentTransaction.objects.filter(
+            status='ACTIVE',
+            created_at__gte=start,
+            created_at__lt=end,
+            user__userprofile__chosen_country__in=BONUS_ACTION_COUNTRIES,
+            user__userprofile__chosen_country__isnull=False
+        ).count()
+        logger.info(f'[TelegramStats] TIER1: Total ACTIVE subscriptions: {tier1_total_active_subs}')
+        logger.info(f'[TelegramStats] TIER1: ACTIVE subscriptions yesterday: {tier1_active_subs_yesterday}')
+
+        # TIER1: 7. Tasks that need exactly 1 action to complete (от авторов TIER1)
+        tier1_almost_completed_tasks = Task.objects.filter(
+            status='ACTIVE',
+            actions_required__gt=0,
+            creator__userprofile__chosen_country__in=BONUS_ACTION_COUNTRIES,
+            creator__userprofile__chosen_country__isnull=False
+        ).extra(where=['actions_required - actions_completed = 1']).count()
+        logger.info(f'[TelegramStats] TIER1: Tasks needing exactly 1 action to complete: {tier1_almost_completed_tasks}')
+
         # Формируем сообщение
         message = (
             f"🧗‍♀️ Daily Platform Stats (for {start.strftime('%Y-%m-%d')}):\n"
@@ -147,7 +278,18 @@ class Command(BaseCommand):
             f"7. Tasks in status ACTIVE (not completed): <b>{active_tasks_count}</b> (+{active_tasks_yesterday_count} yesterday)\n"
             f"8. Subscriptions TRIAL: <b>{total_trial_subs}</b> (+{trial_subs_yesterday} yesterday)\n"
             f"9. Subscriptions ACTIVE: <b>{total_active_subs}</b> (+{active_subs_yesterday} yesterday)\n"
-            f"10. Tasks needing 1 action to complete: <b>{almost_completed_tasks}</b>\n"
+            f"10. Tasks needing 1 action to complete: <b>{almost_completed_tasks}</b>\n\n"
+            f"🌍 <b>TIER1 Countries Stats:</b>\n"
+            f"1. Tasks completed yesterday: <b>{tier1_completed_tasks_count}</b>\n"
+            f"2. New users registered: <b>{tier1_new_users_count}</b>\n"
+            f"3. New tasks created: <b>{tier1_new_tasks_count}</b>\n"
+            f"4. Total tasks in status COMPLETED: <b>{tier1_total_completed_tasks}</b> (+{tier1_completed_yesterday_count} yesterday)\n"
+            f"5. Avg completion time for tasks completed yesterday: <b>{tier1_avg_completion_time_yesterday_str}</b>\n"
+            f"6. Median completion time for tasks completed yesterday: <b>{tier1_median_completion_time_yesterday_str}</b>\n"
+            f"7. Tasks in status ACTIVE (not completed): <b>{tier1_active_tasks_count}</b> (+{tier1_active_tasks_yesterday_count} yesterday)\n"
+            f"8. Subscriptions TRIAL: <b>{tier1_total_trial_subs}</b> (+{tier1_trial_subs_yesterday} yesterday)\n"
+            f"9. Subscriptions ACTIVE: <b>{tier1_total_active_subs}</b> (+{tier1_active_subs_yesterday} yesterday)\n"
+            f"10. Tasks needing 1 action to complete: <b>{tier1_almost_completed_tasks}</b>\n"
         )
         logger.info(f'[TelegramStats] Message to send: {message}')
 
