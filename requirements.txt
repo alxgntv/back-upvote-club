@@ -56,3 +56,4 @@ urllib3==1.26.6
 whitenoise==6.6.0
 django-markdownx==4.0.7
 django-filter==24.1
+apify-client==1.7.0

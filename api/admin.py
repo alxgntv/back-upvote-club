@@ -2725,6 +2725,7 @@ class WithdrawalAdmin(admin.ModelAdmin):
     list_display = [
         'id',
         'user',
+        'get_completed_tasks_count',
         'amount_usd',
         'points_sold', 
         'withdrawal_method',
@@ -2782,6 +2783,20 @@ class WithdrawalAdmin(admin.ModelAdmin):
     )
     
     actions = ['mark_as_processing', 'mark_as_completed', 'mark_as_failed']
+    
+    def get_queryset(self, request):
+        """Оптимизация запросов для админки"""
+        return super().get_queryset(request).select_related('user').annotate(
+            completed_tasks_count=Count('user__taskcompletion')
+        )
+    
+    def get_completed_tasks_count(self, obj):
+        """Получает количество выполненных заданий для пользователя"""
+        if hasattr(obj, 'completed_tasks_count'):
+            return obj.completed_tasks_count
+        return TaskCompletion.objects.filter(user=obj.user).count()
+    get_completed_tasks_count.short_description = 'Completed Tasks'
+    get_completed_tasks_count.admin_order_field = 'completed_tasks_count'
     
     def mark_as_processing(self, request, queryset):
         """Отметить как обрабатывается"""

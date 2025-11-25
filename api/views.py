@@ -66,6 +66,7 @@ from dateutil.relativedelta import relativedelta
 from .email_service import EmailService
 from django.core.mail import send_mail
 from decimal import Decimal
+from .helpers.linkedin_helper import verify_linkedin_profile_by_url
 
 logger = logging.getLogger('api')
 
@@ -3416,6 +3417,79 @@ def verify_social_profile(request):
             profile.verification_status = 'PENDING'
             profile.save()
             logger.info(f"[verify_social_profile] Profile updated: id={profile.id}, user_id={profile.user.id}, username={profile.username}")
+
+        # Для LinkedIn используем автоматическую верификацию через Apify
+        if social_network_code == 'LINKEDIN':
+            logger.info(f"[verify_social_profile] LinkedIn profile detected, starting Apify verification for: {profile_url}")
+            # Используем оригинальный URL для Apify, так как он чувствителен к регистру
+            is_valid, profile_data, validation_result = verify_linkedin_profile_by_url(profile_url.strip())
+            
+            if not is_valid:
+                # Профиль не прошел проверку
+                failed_criteria = validation_result.get('failed_criteria', [])
+                details = validation_result.get('details', {})
+                
+                logger.warning(f"[verify_social_profile] LinkedIn profile verification failed. Failed criteria: {failed_criteria}")
+                
+                # Обновляем статус профиля на REJECTED
+                profile.verification_status = 'REJECTED'
+                if 'PROFILE_MUST_HAVE_EMOJI_FINGERPRINT' in failed_criteria:
+                    profile.rejection_reason = 'NO_EMOJI'
+                else:
+                    profile.rejection_reason = 'DOES_NOT_MEET_CRITERIA'
+                profile.save()
+                
+                # Формируем детальное сообщение об ошибке
+                error_messages = []
+                if 'FAILED_TO_FETCH_PROFILE_DATA' in failed_criteria:
+                    apify_error = details.get('error', '')
+                    if 'free Apify plan' in apify_error:
+                        error_messages.append("Apify service is currently unavailable. Please contact support at yes@upvote.club for manual verification.")
+                    else:
+                        error_messages.append("Failed to fetch profile data from Apify. Please try again later or contact support at yes@upvote.club.")
+                if 'MINIMUM_CONNECTIONS_OR_FOLLOWERS' in failed_criteria:
+                    error_messages.append(f"Minimum 100 connections or followers required. You have {details.get('total_connections_followers', 0)}.")
+                if 'PROFILE_MUST_HAVE_AVATAR' in failed_criteria:
+                    error_messages.append("Profile must have an avatar.")
+                if 'CLEAR_PROFILE_DESCRIPTION' in failed_criteria:
+                    error_messages.append("Profile must have a clear description (who you are, what you do).")
+                if 'PROFILE_MUST_HAVE_EMOJI_FINGERPRINT' in failed_criteria:
+                    error_messages.append(f"Profile must contain all emoji fingerprint: {', '.join(['🧗‍♂️', '😄', '🤩', '🤖', '😛'])}")
+                if 'PROFILE_MUST_HAVE_1_PLACE_OF_WORK' in failed_criteria:
+                    error_messages.append("Profile must have at least 1 place of work.")
+                
+                return Response({
+                    'success': False,
+                    'error': 'Profile does not meet verification criteria',
+                    'failed_criteria': failed_criteria,
+                    'details': details,
+                    'messages': error_messages
+                }, status=400)
+            
+            # Профиль прошел проверку - автоматически верифицируем
+            logger.info(f"[verify_social_profile] LinkedIn profile verification passed. Auto-verifying profile id={profile.id}")
+            profile.verification_status = 'VERIFIED'
+            profile.is_verified = True
+            profile.verification_date = timezone.now()
+            
+            # Сохраняем дополнительные данные из Apify, если они есть
+            if profile_data:
+                if profile_data.get('profilePic') or profile_data.get('profilePicHighQuality'):
+                    profile.avatar_url = profile_data.get('profilePic') or profile_data.get('profilePicHighQuality')
+                if profile_data.get('followers'):
+                    profile.followers_count = profile_data.get('followers', 0) or 0
+                if profile_data.get('connections'):
+                    profile.following_count = profile_data.get('connections', 0) or 0
+            
+            profile.save()
+            logger.info(f"[verify_social_profile] LinkedIn profile verified successfully: id={profile.id}")
+            
+            return Response({
+                'success': True,
+                'profile_id': profile.id,
+                'message': 'Your LinkedIn profile has been verified successfully!',
+                'verified': True
+            }, status=200)
 
         # Отправляем письмо админу (один раз, не в цикле)
         admin_email = getattr(settings, 'ADMIN_EMAIL', 'yes@upvote.club')
