@@ -582,6 +582,9 @@ def tasks1(request):
         # Сортировка: сначала закрепленные, потом по дате создания
         tasks = tasks.order_by('-is_pinned', '-created_at')
         
+        # Ограничиваем количество заданий до 20
+        tasks = tasks[:20]
+        
         serializer = TaskSerializer(tasks, many=True, context={'request': request})
         return Response(serializer.data)
     
