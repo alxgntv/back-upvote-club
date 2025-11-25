@@ -90,8 +90,6 @@ def register_user(request):
             user, created = User.objects.get_or_create(username=uid)
             
             if created:
-                logging.info(f"[register_user] Created new user with uid: {uid}")
-                
                 # Ищем пригласившего пользователя по инвайт-коду
                 inviter_user = None
                 invite_code_obj = None
@@ -110,15 +108,13 @@ def register_user(request):
                             invite_code_obj.used_by.add(user)
                             invite_code_obj.uses_count += 1
                             invite_code_obj.save(update_fields=['uses_count'])
-                            
-                            logging.info(f"[register_user] User {uid} was invited by {inviter_user.username}")
                         else:
-                            logging.warning(f"[register_user] Invalid invite code: {invite_code_string}")
+                            pass
                             
                     except InviteCode.DoesNotExist:
-                        logging.warning(f"[register_user] Invite code not found: {invite_code_string}")
+                        pass
                     except Exception as e:
-                        logging.error(f"[register_user] Error processing invite code: {str(e)}")
+                        pass
                 
                 # 2. Создаем профиль с базовыми настройками
                 user_profile = UserProfile.objects.create(
@@ -130,20 +126,13 @@ def register_user(request):
                     invited_by=inviter_user  # Устанавливаем связь с пригласившим
                 )
                 
-                logging.info(f"[register_user] Created user profile for {uid}")
-                
                 # Создаем безлимитный инвайт-код для нового пользователя
                 user_profile.update_available_tasks()
                 new_invite_code = user_profile.create_unlimited_invite_code()
                 
-                if new_invite_code:
-                    logging.info(f"[register_user] Created unlimited invite code for {uid}: {new_invite_code.code}")
-                
                 # 3. Если есть данные для задачи - создаем её
                 if task_data:
                     social_network_code = task_data.get('social_network_code', 'TWITTER')
-                    logger.info(f'[register_user] Creating task with social network: {social_network_code}')
-                    logger.info(f'[register_user] Task data: {task_data}')
 
                     social_network = SocialNetwork.objects.get(code=social_network_code)
 
@@ -182,13 +171,6 @@ def register_user(request):
         # 4. Создаем токены
         refresh = RefreshToken.for_user(user)
         
-        logger.info(f'[register_user] User registered successfully:', {
-            'uid': uid,
-            'country_code': country_code,
-            'is_new_user': created,
-            'has_task': bool(task_data and created)
-        })
-        
         return Response({
             'refresh': str(refresh),
             'access': str(refresh.access_token),
@@ -197,7 +179,6 @@ def register_user(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Registration error: {str(e)}")
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 class TaskViewSet(viewsets.ModelViewSet):
@@ -218,15 +199,12 @@ class TaskViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         try:
             user = self.request.user
-            logger.info(f"[get_queryset] Start for user: {user.id}")
 
             social_network_code = self.request.query_params.get('social_network')
-            logger.info(f"[get_queryset] social_network_code: {social_network_code}")
 
             # --- PINNED TASKS ---
             # Получаем id задач, которые пользователь уже выполнял
             completed_task_ids = set(TaskCompletion.objects.filter(user=user).values_list('task_id', flat=True))
-            logger.info(f"[get_queryset] User {user.id} completed_task_ids for pinned: {list(completed_task_ids)}")
 
             pinned_tasks_qs = Task.objects.filter(
                 status='ACTIVE',
@@ -236,10 +214,8 @@ class TaskViewSet(viewsets.ModelViewSet):
                 pinned_tasks_qs = pinned_tasks_qs.filter(social_network__code=social_network_code.upper())
             if completed_task_ids:
                 pinned_tasks_qs = pinned_tasks_qs.exclude(id__in=completed_task_ids)
-                logger.info(f"[get_queryset] Excluding pinned tasks already completed by user {user.id}")
             pinned_tasks_qs = pinned_tasks_qs.order_by('-created_at')
             pinned_tasks = list(pinned_tasks_qs)
-            logger.info(f"[get_queryset] pinned_tasks count after exclude: {len(pinned_tasks)}")
 
             # --- ORDINARY TASKS ---
             completed_combinations = TaskCompletion.objects.filter(
@@ -249,7 +225,6 @@ class TaskViewSet(viewsets.ModelViewSet):
                 'task__type',
                 'task__social_network'
             ).distinct()
-            logger.info(f"[get_queryset] completed_combinations count: {completed_combinations.count()}")
 
             # Нормализация URL: убрать query/fragment, нижний регистр хоста, убрать финальный '/'
             def _normalize_url(raw_url: str) -> str:
@@ -320,12 +295,11 @@ class TaskViewSet(viewsets.ModelViewSet):
                 # Ограничиваем количество закрепленных задач до 10
                 pinned_tasks = pinned_tasks[:10]
             except Exception as e:
-                logger.error(f"[get_queryset] Error excluding pinned by normalized combo: {str(e)}")
+                pass
 
             reported_tasks = TaskReport.objects.filter(
                 user=user
             ).values_list('task_id', flat=True)
-            logger.info(f"[get_queryset] reported_tasks count: {reported_tasks.count()}")
 
             available_tasks = Task.objects.filter(
                 status='ACTIVE',
@@ -359,15 +333,13 @@ class TaskViewSet(viewsets.ModelViewSet):
 
                     if ids_to_exclude:
                         available_tasks = available_tasks.exclude(id__in=ids_to_exclude)
-                        logger.info(f"[get_queryset] Excluded by normalized combo ids count: {len(ids_to_exclude)}")
             except Exception as e:
-                logger.error(f"[get_queryset] Error excluding available by normalized combo: {str(e)}")
+                pass
 
             if social_network_code:
                 available_tasks = available_tasks.filter(
                     social_network__code=social_network_code.upper()
                 )
-                logger.info(f"[get_queryset] Filtered by social_network_code: {social_network_code.upper()}")
 
             available_tasks = available_tasks.prefetch_related(
                 'completions',
@@ -405,14 +377,12 @@ class TaskViewSet(viewsets.ModelViewSet):
                 available_tasks.filter(is_fresh=1, is_completed=0)
                 .order_by('remaining_actions', '-created_at')
             )
-            logger.info(f"[get_queryset] fresh_tasks count: {len(fresh_tasks)}")
 
             # 2. Почти завершённые старые (не свежие)
             almost_done_tasks = list(
                 available_tasks.filter(is_fresh=0, is_almost_done=1, is_completed=0)
                 .order_by('remaining_actions', '-created_at')
             )
-            logger.info(f"[get_queryset] almost_done_tasks count: {len(almost_done_tasks)}")
 
             # 3. Остальные
             other_tasks = list(
@@ -420,13 +390,11 @@ class TaskViewSet(viewsets.ModelViewSet):
                 .filter(is_completed=0)
                 .order_by('-created_at')
             )
-            logger.info(f"[get_queryset] other_tasks count: {len(other_tasks)}")
 
             # --- АННОТИРУЕМ статус создателя задачи ---
             available_tasks = available_tasks.select_related('creator__userprofile').annotate(
                 creator_status=F('creator__userprofile__status')
             )
-            logger.info(f"[get_queryset] Annotated creator_status for available_tasks")
 
             # --- МАППИНГ ПРИОРИТЕТОВ ---
             STATUS_PRIORITY = {
@@ -439,19 +407,16 @@ class TaskViewSet(viewsets.ModelViewSet):
             def status_priority(task):
                 status = getattr(task, 'creator_status', None)
                 prio = STATUS_PRIORITY.get(status, 4)
-                logger.debug(f"[get_queryset] Task id={task.id} creator_status={status} priority={prio}")
                 return prio
 
             # --- СОРТИРОВКА ВНУТРИ КАЖДОГО БЛОКА ---
             def sort_by_status(tasks, block_name):
-                logger.info(f"[get_queryset] Sorting {block_name} by creator_status priority...")
                 sorted_tasks = sorted(
                     tasks,
                     key=lambda t: (status_priority(t),
                                    t.remaining_actions if hasattr(t, 'remaining_actions') else 0,
                                    -t.created_at.timestamp() if hasattr(t, 'created_at') else 0)
                 )
-                logger.info(f"[get_queryset] {block_name} sorted. First 5: {[getattr(t, 'id', None) for t in sorted_tasks[:5]]}")
                 return sorted_tasks
 
             fresh_tasks = sort_by_status(fresh_tasks, 'fresh_tasks')
@@ -464,36 +429,22 @@ class TaskViewSet(viewsets.ModelViewSet):
                 if len(mixed_tasks) >= settings.TASKS_PER_REQUEST:
                     break
                 mixed_tasks.append(t)
-                logger.info(f"[get_queryset] Add FRESH task id: {t.id}")
             if len(mixed_tasks) < settings.TASKS_PER_REQUEST:
                 for t in almost_done_tasks:
                     if len(mixed_tasks) >= settings.TASKS_PER_REQUEST:
                         break
                     mixed_tasks.append(t)
-                    logger.info(f"[get_queryset] Add ALMOST_DONE task id: {t.id}")
             if len(mixed_tasks) < settings.TASKS_PER_REQUEST:
                 for t in other_tasks:
                     if len(mixed_tasks) >= settings.TASKS_PER_REQUEST:
                         break
                     mixed_tasks.append(t)
-                    logger.info(f"[get_queryset] Add OTHER task id: {t.id}")
-
-            logger.info(f"[get_queryset] Final tasks count: {len(mixed_tasks)}")
-
-            # ЛОГИРУЕМ creator_status для первых 10 задач
-            for t in list(available_tasks)[:10]:
-                try:
-                    logger.info(f"[get_queryset] CHECK: task_id={t.id} creator_id={t.creator_id} creator_status={getattr(t, 'creator_status', None)} username={t.creator.username if hasattr(t, 'creator') else None} profile_status={getattr(t.creator.userprofile, 'status', None) if hasattr(t.creator, 'userprofile') else None}")
-                except Exception as e:
-                    logger.error(f"[get_queryset] ERROR LOGGING TASK: {e}")
 
             # --- ФИНАЛЬНАЯ СБОРКА: pinned + обычные ---
             final_tasks = pinned_tasks + mixed_tasks
-            logger.info(f"[get_queryset] FINAL tasks count (pinned + ordinary): {len(final_tasks)}")
             return final_tasks
 
         except Exception as e:
-            logger.error(f"Error in get_queryset: {str(e)}\nTraceback: {traceback.format_exc()}")
             return Task.objects.none()
 
     @action(detail=False, methods=['get'])
@@ -526,15 +477,6 @@ class TaskViewSet(viewsets.ModelViewSet):
         price = serializer.validated_data.get('price')
         actions_required = serializer.validated_data.get('actions_required')
         
-        logger.info(f"""
-            [perform_create] Creating task:
-            User: {self.request.user.id}
-            Social Network: {social_network.code}
-            Type: {task_type}
-            Price: {price}
-            Actions Required: {actions_required}
-        """)
-        
         # Проверяем, что тип действия доступен для данной социальной сети
         if not social_network.available_actions.filter(code=task_type).exists():
             raise ValidationError(f"Action type {task_type} is not available for {social_network.name}")
@@ -543,15 +485,6 @@ class TaskViewSet(viewsets.ModelViewSet):
         
         # Вычисляем стоимость с учетом скидки и оригинальную стоимость
         discounted_cost, original_cost = user_profile.calculate_task_cost(price, actions_required)
-        
-        logger.info(f"""
-            [perform_create] Cost calculation:
-            Original Cost: {original_cost}
-            Discounted Cost: {discounted_cost}
-            User Balance: {user_profile.balance}
-            User Status: {user_profile.status}
-            Discount Rate: {user_profile.get_discount_rate()}%
-        """)
         
         # Проверяем баланс с учетом скидки
         if discounted_cost > user_profile.balance:
@@ -589,7 +522,6 @@ class TaskViewSet(viewsets.ModelViewSet):
                         )
                         
                     except Exception as e:
-                        logger.error(f"[perform_create] Error creating FOLLOW task: {str(e)}")
                         raise ValidationError("Error creating FOLLOW task. Please try again later.")
                 else:
                     # Списываем баланс с учетом скидки
@@ -603,18 +535,9 @@ class TaskViewSet(viewsets.ModelViewSet):
                         status='ACTIVE'  # Явно указываем статус
                     )
                 
-                logger.info(f"""
-                    [perform_create] Task created successfully:
-                    Task ID: {task.id}
-                    Original Price: {task.original_price}
-                    Price: {task.price}
-                    New User Balance: {user_profile.balance}
-                """)
-                
         except ValidationError:
             raise
         except Exception as e:
-            logger.error(f"[perform_create] Error creating task: {str(e)}")
             raise ValidationError("Error creating task. Please try again later.")
 
  
@@ -734,14 +657,11 @@ def complete_task(request, task_id):
                 }, status=status.HTTP_200_OK)
 
         except IntegrityError as e:
-            logger.error(f"[complete_task] IntegrityError: {str(e)}")
             return Response({'error': 'Duplicate completion'}, status=status.HTTP_400_BAD_REQUEST)
         except ValidationError as e:
-            logger.error(f"[complete_task] ValidationError: {str(e)}")
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     except Exception as e:
-        logger.error(f"[complete_task] Error completing task: {str(e)}")
         return Response({'error': 'Internal server error'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['GET'])
@@ -780,21 +700,17 @@ def login_user(request):
 @permission_classes([permissions.IsAuthenticated])
 @authentication_classes([JWTAuthentication])
 def create_task(request):
-    logger.info(f"[create_task] Received request data: {request.data}")
-    
     # Проверяем наличие всех необходимых полей
     required_fields = ['post_url', 'type', 'price', 'actions_required', 'social_network_code']
     for field in required_fields:
         if field not in request.data:
             error_msg = f"Missing required field: {field}"
-            logger.warning(f"[create_task] Validation error: {error_msg}")
             return Response({'detail': error_msg}, status=status.HTTP_400_BAD_REQUEST)
     
     # Проверяем доступные задания
     user_profile = request.user.userprofile
     if user_profile.available_tasks <= 0:
         error_msg = "No available tasks left"
-        logger.warning(f"[create_task] Validation error: {error_msg}")
         return Response({'detail': error_msg}, status=status.HTTP_400_BAD_REQUEST)
     
     try:
@@ -814,7 +730,6 @@ def create_task(request):
             # Создаем сериализатор с данными
             serializer = TaskSerializer(data=request.data)
             if not serializer.is_valid():
-                logger.warning(f"[create_task] Serializer validation errors: {serializer.errors}")
                 return Response(
                     {'detail': serializer.errors}, 
                     status=status.HTTP_400_BAD_REQUEST
@@ -854,10 +769,8 @@ def create_task(request):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
             
     except ValidationError as e:
-        logger.warning(f"[create_task] Validation error: {str(e)}")
         return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"[create_task] Error creating task: {str(e)}")
         return Response(
             {'detail': 'Error creating task. Please try again later.'}, 
             status=status.HTTP_400_BAD_REQUEST
