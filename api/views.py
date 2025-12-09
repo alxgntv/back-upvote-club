@@ -51,7 +51,7 @@ from django.db import IntegrityError
 from .auto_actions import TwitterAutoActions
 from django.db import connection
 import logging
-from .utils.email_utils import send_welcome_email, send_task_deleted_due_to_link_email
+from .utils.email_utils import send_welcome_email, send_task_deleted_due_to_link_email, send_task_created_email
 import time
 import stripe
 from .constants import SUBSCRIPTION_PLAN_CONFIG, SUBSCRIPTION_PERIODS
@@ -167,6 +167,12 @@ def register_user(request):
                     user_profile.balance -= total_cost
                     user_profile.decrease_available_tasks()
                     user_profile.save(update_fields=['balance'])
+                    
+                    # Отправляем email о создании задания
+                    try:
+                        send_task_created_email(task)
+                    except Exception as e:
+                        logger.error(f"[register_user] Error sending task created email: {str(e)}")
 
         # 4. Создаем токены
         refresh = RefreshToken.for_user(user)
@@ -692,7 +698,6 @@ def tasks1(request):
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated if settings.COMPLETE_TASK_REQUIRES_AUTH else permissions.AllowAny])
 @authentication_classes([JWTAuthentication] if settings.COMPLETE_TASK_REQUIRES_AUTH else [])
@@ -864,6 +869,79 @@ def create_task(request):
         error_msg = "No available tasks left"
         return Response({'detail': error_msg}, status=status.HTTP_400_BAD_REQUEST)
     
+    # Проверяем, нет ли уже активного задания с таким URL + TYPE + SOCIAL_NETWORK
+    post_url = request.data.get('post_url')
+    task_type = request.data.get('type')
+    social_network_code = request.data.get('social_network_code')
+    
+    # Функция нормализации URL (та же, что в TaskViewSet)
+    def _normalize_url(raw_url: str) -> str:
+        """Normalize URL for duplicate detection.
+        Rules:
+          - ignore query and fragment
+          - lowercase hostname
+          - drop trailing '/'
+          - treat http/https as the same (ignore scheme)
+          - strip leading 'www.'
+        Returns a comparison key in the form 'host/path'.
+        """
+        try:
+            from urllib.parse import urlsplit
+            parts = urlsplit(raw_url)
+            netloc = parts.netloc.lower()
+            # unify common mobile/bare subdomains
+            for prefix in ('www.', 'm.', 'mobile.', 'vm.'):
+                if netloc.startswith(prefix):
+                    netloc = netloc[len(prefix):]
+                    break
+            # map known domain aliases to a canonical host
+            if netloc in {'youtu.be', 'youtube-nocookie.com'}:
+                netloc = 'youtube.com'
+            path = parts.path.rstrip('/') if parts.path != '/' else ''
+            return f"{netloc}{path}"
+        except Exception:
+            safe = (raw_url or '')
+            # remove scheme
+            if '://' in safe:
+                safe = safe.split('://', 1)[1]
+            # strip query/fragment
+            safe = safe.split('#')[0].split('?')[0]
+            safe = safe.rstrip('/')
+            # strip common prefixes
+            for prefix in ('www.', 'm.', 'mobile.', 'vm.'):
+                if safe.startswith(prefix):
+                    safe = safe[len(prefix):]
+                    break
+            # normalize known domain aliases without full parsing
+            safe = safe.lower()
+            host, _, rest = safe.partition('/')
+            if host in {'youtu.be', 'youtube-nocookie.com'}:
+                host = 'youtube.com'
+            return host + (('/' + rest) if rest else '')
+    
+    # Нормализуем входящий URL
+    normalized_post_url = _normalize_url(post_url)
+    
+    # Получаем социальную сеть для проверки
+    try:
+        social_network = SocialNetwork.objects.get(code=social_network_code)
+    except SocialNetwork.DoesNotExist:
+        pass  # Ошибку валидации обработает сериализатор позже
+    else:
+        # Ищем активные задания с той же комбинацией URL + TYPE + SOCIAL_NETWORK
+        active_tasks = Task.objects.filter(
+            status='ACTIVE',
+            type=task_type,
+            social_network=social_network
+        ).only('id', 'post_url')
+        
+        for task in active_tasks:
+            if _normalize_url(task.post_url) == normalized_post_url:
+                return Response({
+                    'detail': 'A task with this URL and action type already exists and is being completed by our community',
+                    'existing_task_id': task.id
+                }, status=status.HTTP_400_BAD_REQUEST)
+    
     try:
         with transaction.atomic():
             # Получаем свежую версию профиля для атомарного обновления
@@ -881,8 +959,21 @@ def create_task(request):
             # Создаем сериализатор с данными
             serializer = TaskSerializer(data=request.data)
             if not serializer.is_valid():
+                # Форматируем ошибки в читаемую строку
+                error_messages = []
+                for field, errors in serializer.errors.items():
+                    if isinstance(errors, list):
+                        for error in errors:
+                            if isinstance(error, dict):
+                                error_messages.append(f"{field}: {', '.join(str(v) for v in error.values())}")
+                            else:
+                                error_messages.append(f"{field}: {str(error)}")
+                    else:
+                        error_messages.append(f"{field}: {str(errors)}")
+                
+                error_detail = '; '.join(error_messages) if error_messages else 'Validation error'
                 return Response(
-                    {'detail': serializer.errors}, 
+                    {'detail': error_detail}, 
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
@@ -916,6 +1007,11 @@ def create_task(request):
             # Уменьшаем количество доступных заданий
             user_profile.decrease_available_tasks()
 
+            # Отправляем email о создании задания
+            try:
+                send_task_created_email(task)
+            except Exception as e:
+                logger.error(f"[create_task] Error sending task created email: {str(e)}")
             
             return Response(serializer.data, status=status.HTTP_201_CREATED)
             

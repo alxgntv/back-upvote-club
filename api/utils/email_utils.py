@@ -813,3 +813,134 @@ Thank you for using Upvote.Club!
     except Exception as e:
         logger.error(f"Error sending withdrawal completed email for withdrawal #{withdrawal.id}: {str(e)}", exc_info=True)
         return False
+
+def send_task_created_email(task):
+    """
+    Отправляет пользователю письмо о том, что его задание создано
+    Args:
+        task: Task object - объект созданного задания
+    """
+    try:
+        logger.info(f"""
+            Starting task created email preparation:
+            Task ID: {task.id}
+            User: {task.creator.username}
+            Type: {task.type}
+            Social Network: {task.social_network.name}
+            Actions Required: {task.actions_required}
+        """)
+
+        # Получаем email пользователя из Firebase
+        user_email = get_firebase_email(task.creator.username)
+        if not user_email:
+            logger.error(f"Could not get Firebase email for user {task.creator.username}")
+            return False
+
+        # Проверяем подписку пользователя (если есть тип подписки, иначе просто отправляем)
+        unsubscribe_url = None
+        try:
+            subscription_type, _ = EmailSubscriptionType.objects.get_or_create(
+                name='task_created',
+                defaults={'description': 'Task creation confirmation emails'}
+            )
+            subscription, _ = UserEmailSubscription.objects.get_or_create(
+                user=task.creator,
+                subscription_type=subscription_type,
+                defaults={'is_subscribed': True}
+            )
+            unsubscribe_url = f"{settings.SITE_URL}/api/unsubscribe/{subscription.unsubscribe_token}/"
+            logger.info(f"Unsubscribe URL found: {unsubscribe_url}")
+        except Exception as e:
+            logger.warning(f"No task_created subscription found for user {task.creator.username}: {str(e)}")
+
+        # Получаем название действия
+        action_name = task.type.upper()
+        
+        # Формируем subject
+        subject = f"Your task for {task.actions_required} {task.social_network.name} {action_name} created"
+        
+        # Формируем HTML контент письма
+        html_content = f"""
+<html>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+    <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h2 style="color: #2563eb;">Your task has been created! 🎉</h2>
+        
+        <div style="background-color: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0;">
+            <p style="margin: 5px 0;"><strong>Task Details:</strong></p>
+            <p style="margin: 5px 0;">• Network: {task.social_network.name}</p>
+            <p style="margin: 5px 0;">• Action: {action_name}</p>
+            <p style="margin: 5px 0;">• Number of actions: {task.actions_required}</p>
+            <p style="margin: 5px 0;">• URL: <a href="{task.post_url}" style="color: #2563eb;">{task.post_url}</a></p>
+        </div>
+
+        <h3 style="color: #2563eb; margin-top: 30px;">How Upvote Club Works:</h3>
+        
+        <div style="margin: 20px 0;">
+            <p><strong>1. Community-Driven Platform</strong></p>
+            <p style="margin-left: 20px;">Your task is completed by real people from our community who want to earn points.</p>
+        </div>
+
+        <div style="margin: 20px 0;">
+            <p><strong>2. Completion Speed</strong></p>
+            <p style="margin-left: 20px;">The speed at which your task gets completed depends on how many community members are available today to complete tasks like yours. We'll notify you by email once your task is finished.</p>
+        </div>
+
+        <div style="margin: 20px 0;">
+            <p><strong>3. Earn Points by Helping Others</strong></p>
+            <p style="margin-left: 20px;">You can also complete tasks from other users to earn points and help grow the community. It's a win-win!</p>
+        </div>
+
+        <div style="margin: 20px 0;">
+            <p><strong>4. Create More Tasks</strong></p>
+            <p style="margin-left: 20px;">Ready to promote more content? <a href="{settings.SITE_URL}/dashboard/createtask" style="color: #2563eb; text-decoration: none; font-weight: bold;">Create another task here →</a></p>
+        </div>
+
+        <div style="margin: 20px 0;">
+            <p><strong>5. Account Limits</strong></p>
+            <p style="margin-left: 20px;">Free accounts can create 1 task every 24 hours, but you can earn points unlimited by completing other users' tasks.</p>
+        </div>
+
+                <div style="margin: 20px 0;">
+            <p><strong>5. Upgrade for More Power 🚀</strong></p>
+            <p style="margin-left: 20px;">
+                Upgrade your account to create <b>unlimited tasks per day</b> and get up to <b>15,000 bonus points</b>!<br>
+                <a href="{settings.SITE_URL}/dashboard/subscribe" style="color: #2563eb; text-decoration: none; font-weight: bold;">
+                    Upgrade here →
+                </a>
+            </p>
+        </div>
+
+        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+            <p><a href="{settings.SITE_URL}/dashboard?tab=mytasks" style="display: inline-block; padding: 12px 24px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 6px; font-weight: bold;">View Your Tasks</a></p>
+        </div>
+
+        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280;">
+            <p>Questions? Reply to this email or contact us at yes@upvote.club</p>
+            {f'<p><a href="{unsubscribe_url}" style="color: #6b7280;">Unsubscribe from these emails</a></p>' if unsubscribe_url else ''}
+        </div>
+    </div>
+</body>
+</html>
+"""
+        
+        logger.info(f"Prepared email for task created: {subject}")
+
+        email_service = EmailService()
+        result = email_service.send_email(
+            to_email=user_email,
+            subject=subject,
+            html_content=html_content,
+            unsubscribe_url=unsubscribe_url
+        )
+
+        if result:
+            logger.info(f"Successfully sent task created email to {user_email} for task #{task.id}")
+        else:
+            logger.error(f"Failed to send task created email to {user_email} for task #{task.id}")
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error sending task created email for task #{task.id}: {str(e)}", exc_info=True)
+        return False
