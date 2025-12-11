@@ -453,6 +453,170 @@ class TaskViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Task.objects.none()
 
+    def list(self, request, *args, **kwargs):
+        """
+        Переопределенный метод list для добавления статистики по социальным сетям.
+        Возвращает объект с полями:
+        - stats_by_network: список статистики по каждой соц. сети
+        - total_available: общее количество доступных задач
+        - tasks: список задач (обработанный через get_queryset)
+        """
+        try:
+            from django.db.models import Count
+            
+            user = request.user
+            social_network_code = request.query_params.get('social_network')
+            
+            # Получаем задачи через get_queryset (это уже отфильтрованный список)
+            queryset = self.filter_queryset(self.get_queryset())
+            
+            # Теперь нужно получить полную статистику для фильтров
+            # Строим базовый queryset для подсчета статистики (без пагинации и лимитов)
+            
+            # Получаем id задач, которые пользователь уже выполнял
+            completed_task_ids = set(TaskCompletion.objects.filter(user=user).values_list('task_id', flat=True))
+            
+            # Получаем id репортнутых задач
+            reported_tasks = TaskReport.objects.filter(user=user).values_list('task_id', flat=True)
+            
+            # Базовый queryset для статистики
+            stats_queryset = Task.objects.filter(
+                status='ACTIVE'
+            ).exclude(
+                creator=user
+            ).exclude(
+                id__in=reported_tasks
+            )
+            
+            # Исключаем выполненные задания по ID
+            if completed_task_ids:
+                stats_queryset = stats_queryset.exclude(id__in=completed_task_ids)
+            
+            # Исключаем задания с таким же нормализованным URL (аналогично логике в get_queryset)
+            completed_combinations = TaskCompletion.objects.filter(
+                user=user
+            ).values_list(
+                'task__post_url',
+                'task__type',
+                'task__social_network'
+            ).distinct()
+            
+            # Функция нормализации URL (та же, что в get_queryset)
+            def _normalize_url(raw_url: str) -> str:
+                """Normalize URL for duplicate detection."""
+                try:
+                    from urllib.parse import urlsplit
+                    parts = urlsplit(raw_url)
+                    netloc = parts.netloc.lower()
+                    for prefix in ('www.', 'm.', 'mobile.', 'vm.'):
+                        if netloc.startswith(prefix):
+                            netloc = netloc[len(prefix):]
+                            break
+                    if netloc in {'youtu.be', 'youtube-nocookie.com'}:
+                        netloc = 'youtube.com'
+                    path = parts.path.rstrip('/') if parts.path != '/' else ''
+                    return f"{netloc}{path}"
+                except Exception:
+                    safe = (raw_url or '')
+                    if '://' in safe:
+                        safe = safe.split('://', 1)[1]
+                    safe = safe.split('#')[0].split('?')[0]
+                    safe = safe.rstrip('/')
+                    for prefix in ('www.', 'm.', 'mobile.', 'vm.'):
+                        if safe.startswith(prefix):
+                            safe = safe[len(prefix):]
+                            break
+                    safe = safe.lower()
+                    host, _, rest = safe.partition('/')
+                    if host in {'youtu.be', 'youtube-nocookie.com'}:
+                        host = 'youtube.com'
+                    return host + (('/' + rest) if rest else '')
+            
+            # Собираем множество завершённых комбинаций
+            completed_combo_set = set(
+                (
+                    _normalize_url(url or ''),
+                    t_type,
+                    sn_id,
+                )
+                for (url, t_type, sn_id) in completed_combinations
+            )
+            
+            # Исключаем задания по нормализованной комбинации
+            if completed_combo_set:
+                try:
+                    types_set = list({t for (_, t, _) in completed_combo_set if t is not None})
+                    sn_ids_set = list({sn for (_, _, sn) in completed_combo_set if sn is not None})
+                    
+                    if types_set and sn_ids_set:
+                        candidates = stats_queryset.filter(
+                            type__in=types_set,
+                            social_network_id__in=sn_ids_set
+                        ).values('id', 'post_url', 'type', 'social_network_id')
+                        
+                        ids_to_exclude = []
+                        for c in candidates:
+                            if (
+                                _normalize_url(c.get('post_url') or ''),
+                                c.get('type'),
+                                c.get('social_network_id'),
+                            ) in completed_combo_set:
+                                ids_to_exclude.append(c['id'])
+                        
+                        if ids_to_exclude:
+                            stats_queryset = stats_queryset.exclude(id__in=ids_to_exclude)
+                except Exception:
+                    pass
+            
+            # Подсчитываем статистику по социальным сетям
+            stats_by_network = stats_queryset.values(
+                'social_network__id',
+                'social_network__name',
+                'social_network__code',
+                'social_network__icon'
+            ).annotate(
+                count=Count('id')
+            ).order_by('-count')
+            
+            # Формируем список статистики
+            stats_list = []
+            total_tasks = 0
+            
+            print(f"[TaskViewSet.list] Building stats for available tasks (user: {user.id})")
+            
+            for stat in stats_by_network:
+                network_data = {
+                    'social_network_id': stat['social_network__id'],
+                    'social_network_name': stat['social_network__name'],
+                    'social_network_code': stat['social_network__code'],
+                    'social_network_icon': stat['social_network__icon'],
+                    'available_count': stat['count']
+                }
+                stats_list.append(network_data)
+                total_tasks += stat['count']
+                print(f"[TaskViewSet.list] Network: {stat['social_network__name']}, Available: {stat['count']}")
+            
+            print(f"[TaskViewSet.list] Total available tasks across all networks: {total_tasks}")
+            
+            # Сериализуем задачи
+            serializer = self.get_serializer(queryset, many=True)
+            
+            # Возвращаем статистику и задания
+            return Response({
+                'stats_by_network': stats_list,
+                'total_available': total_tasks,
+                'tasks': serializer.data
+            })
+            
+        except Exception as e:
+            print(f"[TaskViewSet.list] Error building stats: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            # В случае ошибки возвращаем стандартный формат
+            queryset = self.filter_queryset(self.get_queryset())
+            serializer = self.get_serializer(queryset, many=True)
+            return Response(serializer.data)
+
     @action(detail=False, methods=['get'])
     def my_tasks(self, request):
         tasks = Task.objects.filter(creator=request.user).prefetch_related(
