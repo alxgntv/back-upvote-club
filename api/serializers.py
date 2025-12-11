@@ -212,6 +212,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     available_tasks_for_completion = serializers.SerializerMethodField()
     potential_earnings = serializers.SerializerMethodField()
     social_profiles = serializers.SerializerMethodField(read_only=True)
+    community_rank = serializers.SerializerMethodField()
 
     class Meta:
         model = UserProfile
@@ -230,6 +231,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'referrer_url', 'landing_url', 'referrer_timestamp', 'referrer_user_agent',
             'device_type', 'os_name', 'os_version',
             'black_friday_subscribed',
+            'community_rank',
         ]
 
     def get_daily_task_limit(self, obj):
@@ -307,6 +309,54 @@ class UserProfileSerializer(serializers.ModelSerializer):
         profiles = obj.user.social_profiles.all()
         # Формируем словарь: {"TWITTER": "PENDING", ...}
         return {p.social_network.code: p.verification_status for p in profiles}
+
+    def get_community_rank(self, obj):
+        """
+        Возвращает место пользователя в комьюнити на основе количества выполненных заданий.
+        Чем больше заданий выполнено, тем выше место (меньше число).
+        Место 1 = самый активный пользователь.
+        """
+        try:
+            from django.db.models import Count, Q
+            
+            # Получаем количество выполненных заданий текущего пользователя
+            current_user_tasks_count = obj.completed_tasks_count or 0
+            
+            print(f"[get_community_rank] Calculating rank for user {obj.user.id}")
+            print(f"[get_community_rank] User's completed tasks count: {current_user_tasks_count}")
+            
+            # Подсчитываем количество пользователей, у которых больше выполненных заданий
+            users_with_more_tasks = UserProfile.objects.filter(
+                completed_tasks_count__gt=current_user_tasks_count
+            ).count()
+            
+            print(f"[get_community_rank] Users with more tasks: {users_with_more_tasks}")
+            
+            # Место пользователя = количество пользователей выше него + 1
+            rank = users_with_more_tasks + 1
+            
+            # Дополнительно: подсчитываем общее количество активных пользователей
+            total_users = UserProfile.objects.filter(
+                completed_tasks_count__gt=0
+            ).count()
+            
+            print(f"[get_community_rank] User rank: {rank} out of {total_users} active users")
+            
+            return {
+                'rank': rank,
+                'total_users': total_users,
+                'completed_tasks': current_user_tasks_count
+            }
+            
+        except Exception as e:
+            print(f"[get_community_rank] Error calculating rank: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'rank': None,
+                'total_users': None,
+                'completed_tasks': obj.completed_tasks_count or 0
+            }
 
 class InviteCodeSerializer(serializers.ModelSerializer):
     class Meta:
