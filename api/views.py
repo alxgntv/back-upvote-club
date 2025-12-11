@@ -672,6 +672,39 @@ def tasks1(request):
                 except Exception:
                     pass
         
+        # Подсчитываем статистику по социальным сетям ДО применения лимита
+        # Группируем по social_network и считаем количество
+        from django.db.models import Count
+        
+        stats_by_network = tasks.values(
+            'social_network__id',
+            'social_network__name',
+            'social_network__code',
+            'social_network__icon'
+        ).annotate(
+            count=Count('id')
+        ).order_by('-count')
+        
+        # Формируем список статистики
+        stats_list = []
+        total_tasks = 0
+        
+        print(f"[tasks1] Building stats for available tasks")
+        
+        for stat in stats_by_network:
+            network_data = {
+                'social_network_id': stat['social_network__id'],
+                'social_network_name': stat['social_network__name'],
+                'social_network_code': stat['social_network__code'],
+                'social_network_icon': stat['social_network__icon'],
+                'available_count': stat['count']
+            }
+            stats_list.append(network_data)
+            total_tasks += stat['count']
+            print(f"[tasks1] Network: {stat['social_network__name']}, Available: {stat['count']}")
+        
+        print(f"[tasks1] Total available tasks across all networks: {total_tasks}")
+        
         tasks = tasks.select_related(
             'creator',
             'creator__userprofile',
@@ -693,7 +726,13 @@ def tasks1(request):
         tasks = tasks[:20]
         
         serializer = TaskSerializer(tasks, many=True, context={'request': request})
-        return Response(serializer.data)
+        
+        # Возвращаем статистику и задания
+        return Response({
+            'stats_by_network': stats_list,
+            'total_available': total_tasks,
+            'tasks': serializer.data
+        })
     
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
