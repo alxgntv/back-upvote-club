@@ -4830,6 +4830,101 @@ def save_referrer_tracking(request):
             'message': f'Error saving referrer tracking data: {str(e)}'
         }, status=500)
 
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+@authentication_classes([JWTAuthentication])
+def verify_website(request):
+    """
+    Принимает URL вебсайта или статьи и отправляет уведомление в Telegram
+    Валидация не требуется - принимаем любую строку
+    """
+    logger.info(f"[verify_website] Received verification request from user {request.user.id}")
+    
+    try:
+        website_url = request.data.get('website_url')
+        article_url = request.data.get('article_url')
+        
+        # Определяем тип: статья или вебсайт
+        # Принимаем любую строку, даже пустую - просто отправляем в Telegram
+        url = article_url or website_url
+        is_article = bool(article_url)
+        
+        # Если вообще ничего не передано, возвращаем ошибку
+        if article_url is None and website_url is None:
+            logger.error("[verify_website] Neither website_url nor article_url provided")
+            return Response(
+                {'error': 'website_url or article_url is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Просто берем строку как есть, без валидации - принимаем любую строку
+        url = (url or '').strip()
+        
+        user = request.user
+        
+        # Получаем активный invite code
+        active_invite = InviteCode.objects.filter(creator=user, status='ACTIVE').order_by('-created_at').first()
+        invite_code = active_invite.code if active_invite else 'N/A'
+        invite_link = f'https://upvote.club/?invite={invite_code}' if active_invite else 'N/A'
+        
+        logger.info(f"[verify_website] URL: {url} from user {user.id}, invite_code: {invite_code}, is_article: {is_article}")
+        
+        # Отправляем уведомление в Telegram
+        try:
+            TELEGRAM_BOT_TOKEN = '8045516781:AAFdnzHGd78LIeCyW5ygkO8yVk1jY3p5J1Y'
+            TELEGRAM_CHAT_ID = '133814301'
+            
+            if is_article:
+                telegram_message = (
+                    f"📝 New article for moderation!\n"
+                    f"User: {user.username} (ID: {user.id})\n"
+                    f"Article URL: {url}\n"
+                    f"Referral Code: {invite_code}\n"
+                    f"Referral Link: {invite_link}"
+                )
+            else:
+                telegram_message = (
+                    f"🌐 New website for moderation!\n"
+                    f"User: {user.username} (ID: {user.id})\n"
+                    f"Website URL: {url}\n"
+                    f"Referral Code: {invite_code}\n"
+                    f"Referral Link: {invite_link}"
+                )
+            
+            telegram_url = f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage'
+            telegram_payload = {
+                'chat_id': TELEGRAM_CHAT_ID,
+                'text': telegram_message,
+                'parse_mode': 'HTML'
+            }
+            response = requests.post(telegram_url, data=telegram_payload, timeout=10)
+            logger.info(f"[verify_website] Telegram notify response: {response.status_code} {response.text}")
+            
+            if response.status_code != 200:
+                logger.error(f"[verify_website] Failed to send Telegram message: {response.text}")
+                # Не возвращаем ошибку пользователю, просто логируем
+        except Exception as e:
+            logger.error(f"[verify_website] Exception while sending Telegram notify: {str(e)}")
+            # Не возвращаем ошибку пользователю, просто логируем
+        
+        logger.info(f"[verify_website] Verification request processed successfully for user {user.id}, is_article: {is_article}")
+        
+        message = 'Article submitted successfully for verification. We will contact you via email.' if is_article else 'Website submitted successfully for verification. We will contact you via email.'
+        
+        return Response({
+            'success': True,
+            'message': message,
+            'url': url,
+            'is_article': is_article
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"[verify_website] Error processing website verification: {str(e)}", exc_info=True)
+        return Response(
+            {'error': 'Failed to process website verification request'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
 @api_view(['GET', 'POST', 'PATCH'])
 @permission_classes([permissions.IsAuthenticated])
 @authentication_classes([JWTAuthentication])

@@ -68,6 +68,7 @@ urlpatterns = [
     path('task-completion-stats/', task_completion_stats, name='task_completion_stats'),
     path('verify-social-profile/', views.verify_social_profile, name='verify_social_profile'),
     path('verify-social-profile-v2/', views.verify_social_profile_v2, name='verify_social_profile_v2'),
+    path('verify-website/', views.verify_website, name='verify_website'),
     path('tasks/<int:task_id>/delete/', views.delete_task, name='delete_task'),
     path('points-available-for-purchase/', views.points_available_for_purchase, name='points_available_for_purchase'),
     path('verified-accounts-count/', get_verified_accounts_count, name='verified_accounts_count'),
