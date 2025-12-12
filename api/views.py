@@ -4,6 +4,7 @@ from django.views.decorators.csrf import csrf_exempt
 from rest_framework.response import Response
 from django.contrib.auth.models import User
 import json
+import os
 from .models import (
     UserProfile, 
     Task, 
@@ -26,7 +27,7 @@ from firebase_admin import auth
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.conf import settings
 from .serializers import UserProfileSerializer, TaskSerializer, BlogPostSerializer, TaskReportSerializer, SocialNetworkWithActionsSerializer, ActionLandingSerializer, BuyLandingSerializer, InvitedUserSerializer, UserSocialProfileSerializer, CreateUserSocialProfileSerializer, WithdrawalSerializer, CreateWithdrawalSerializer, WithdrawalStatsSerializer, OnboardingProgressSerializer, ReviewSerializer, ReferrerTrackingSerializer
-from .constants import BONUS_ACTION_COUNTRIES, BONUS_ACTION_RATE
+from .constants import BONUS_ACTION_COUNTRIES, BONUS_ACTION_RATE, REDDIT_VERIFICATION_CONFIG
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.db import transaction as db_transaction
 from django.shortcuts import get_object_or_404
@@ -36,6 +37,7 @@ from django.utils import timezone
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
 from django.db import transaction
 from django.shortcuts import redirect
+from urllib.parse import urlparse, quote
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 import tweepy
 from django.http import HttpResponseBadRequest, HttpResponseRedirect, HttpResponse
@@ -69,6 +71,362 @@ from decimal import Decimal
 from .helpers.linkedin_helper import verify_linkedin_profile_by_url
 
 logger = logging.getLogger('api')
+
+def _extract_reddit_username(profile_url: str) -> str:
+    """
+    Небольшой парсер, который вытягивает username из Reddit URL.
+    Поддерживает форматы:
+      - https://www.reddit.com/user/<username>/
+      - https://reddit.com/u/<username>
+    Если распарсить не удалось, вернет пустую строку.
+    """
+    try:
+        if not profile_url:
+            return ''
+        parsed = urlparse(profile_url.strip())
+        path = (parsed.path or '').strip('/')
+        segments = [segment for segment in path.split('/') if segment]
+        if len(segments) >= 2 and segments[0].lower() in ('user', 'u'):
+            return segments[1]
+        if len(segments) == 1:
+            return segments[0]
+        if not parsed.scheme and not parsed.netloc:
+            cleaned = profile_url.strip().strip('/')
+            return cleaned
+    except Exception as e:
+        logger.error(f"[verify_social_profile_v2] Failed to parse Reddit username from url='{profile_url}': {str(e)}", exc_info=True)
+    return ''
+
+
+def _get_rapidapi_keys() -> list[str]:
+    """
+    Получает список всех доступных ключей RapidAPI для Reddit из настроек и переменных окружения.
+    Возвращает список непустых ключей в порядке приоритета.
+    """
+    keys = []
+    # Проверяем ключи из settings и env в порядке приоритета
+    key_names = ['RAPIDAPI_REDDIT_KEY', 'RAPIDAPI_REDDIT_KEY_2', 'RAPIDAPI_REDDIT_KEY_3', 'RAPIDAPI_REDDIT_KEY_4']
+    for key_name in key_names:
+        key_value = (
+            getattr(settings, key_name, None)
+            or os.getenv(key_name)
+        )
+        if key_value and key_value.strip():
+            keys.append(key_value.strip())
+            logger.debug(f"[verify_social_profile_v2] Found RapidAPI key: {key_name}")
+    return keys
+
+
+def _is_rate_limit_error(response: requests.Response) -> bool:
+    """
+    Проверяет, является ли ошибка связанной с превышением лимита запросов.
+    RapidAPI может возвращать HTTP 429, 403 или специфичные сообщения в теле ответа.
+    """
+    if response.status_code == 429:  # Too Many Requests
+        return True
+    if response.status_code == 403:  # Forbidden - может быть при превышении лимита
+        try:
+            error_text = response.text.lower()
+            if 'quota' in error_text or 'limit' in error_text or 'rate limit' in error_text:
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def _try_rapidapi_request_with_rotation(api_url: str, config: dict, username: str) -> tuple[requests.Response | None, str | None]:
+    """
+    Пытается выполнить запрос к RapidAPI с ротацией ключей.
+    Если один ключ исчерпал лимит, пробует следующий.
+    
+    Returns:
+        tuple: (response, used_key) или (None, None) если все ключи исчерпаны
+    """
+    keys = _get_rapidapi_keys()
+    if not keys:
+        logger.error("[verify_social_profile_v2] No RapidAPI keys found")
+        return None, None
+    
+    last_error = None
+    for idx, key in enumerate(keys):
+        headers = {
+            'x-rapidapi-key': key,
+            'x-rapidapi-host': config['api_host']
+        }
+        logger.info(f"[verify_social_profile_v2] Trying RapidAPI key {idx + 1}/{len(keys)} for username={username}")
+        
+        try:
+            api_response = requests.get(api_url, headers=headers, timeout=config.get('request_timeout_seconds', 10))
+            logger.info(f"[verify_social_profile_v2] RapidAPI response status={api_response.status_code} (key {idx + 1}/{len(keys)})")
+            
+            # Если успешный ответ или ошибка не связана с лимитом - возвращаем
+            if api_response.status_code == 200:
+                logger.info(f"[verify_social_profile_v2] Successfully used RapidAPI key {idx + 1}/{len(keys)}")
+                return api_response, key
+            
+            # Если ошибка лимита - пробуем следующий ключ
+            if _is_rate_limit_error(api_response):
+                logger.warning(f"[verify_social_profile_v2] Rate limit error on key {idx + 1}/{len(keys)}, trying next key")
+                last_error = f"Rate limit exceeded on key {idx + 1}"
+                continue
+            
+            # Другие ошибки - возвращаем как есть (не связаны с лимитом)
+            logger.warning(f"[verify_social_profile_v2] Non-rate-limit error {api_response.status_code} on key {idx + 1}/{len(keys)}")
+            return api_response, key
+            
+        except requests.RequestException as e:
+            logger.error(f"[verify_social_profile_v2] Request exception on key {idx + 1}/{len(keys)}: {str(e)}", exc_info=True)
+            last_error = str(e)
+            # Продолжаем пробовать следующий ключ при сетевых ошибках
+            continue
+    
+    # Все ключи исчерпаны
+    logger.error(f"[verify_social_profile_v2] All RapidAPI keys exhausted. Last error: {last_error}")
+    return None, None
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+@authentication_classes([JWTAuthentication])
+def verify_social_profile_v2(request):
+    """
+    Универсальная вью для проверки соцпрофилей. Сейчас реализована поддержка Reddit.
+    Принимает:
+      - social_network (например, 'REDDIT')
+      - profile_url (например, https://www.reddit.com/user/urk__/)
+    Опционально можно передать RapidAPI ключ в заголовке X-RapidAPI-Key, иначе читаем из env.
+    """
+    user = request.user
+    social_network_code = (request.data.get('social_network') or 'REDDIT').upper()
+    profile_url = request.data.get('profile_url') or ''
+    # Проверяем, передан ли ключ в заголовке (приоритет)
+    header_key = request.headers.get('X-RapidAPI-Key')
+    
+    logger.info(f"[verify_social_profile_v2] Start verification: user_id={getattr(user, 'id', None)}, social_network={social_network_code}, profile_url={profile_url}")
+
+    if not profile_url:
+        logger.error("[verify_social_profile_v2] profile_url is required")
+        return Response({'success': False, 'error': 'profile_url is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if social_network_code != 'REDDIT':
+        logger.warning(f"[verify_social_profile_v2] Unsupported social network: {social_network_code}")
+        return Response({'success': False, 'error': 'Social network not supported yet'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Если ключ передан в заголовке, используем его, иначе проверяем наличие ключей в env
+    if header_key:
+        rapidapi_keys = [header_key]
+        logger.info("[verify_social_profile_v2] Using RapidAPI key from header")
+    else:
+        rapidapi_keys = _get_rapidapi_keys()
+        if not rapidapi_keys:
+            logger.error("[verify_social_profile_v2] Missing RapidAPI keys. Provide X-RapidAPI-Key header or set RAPIDAPI_REDDIT_KEY env vars.")
+            return Response(
+                {
+                    'success': False,
+                    'error': 'RapidAPI key is missing',
+                    'detail': 'Set RAPIDAPI_REDDIT_KEY env vars or pass X-RapidAPI-Key header'
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    username = _extract_reddit_username(profile_url)
+    if not username:
+        logger.error(f"[verify_social_profile_v2] Failed to extract Reddit username from url='{profile_url}'")
+        return Response({'success': False, 'error': 'Unable to extract Reddit username from URL'}, status=status.HTTP_400_BAD_REQUEST)
+
+    config = REDDIT_VERIFICATION_CONFIG
+    api_url = f"https://{config['api_host']}{config['profile_path']}?username={quote(username)}"
+    logger.info(f"[verify_social_profile_v2] Fetching Reddit profile from RapidAPI: url={api_url}")
+
+    # Используем ротацию ключей, если не передан ключ в заголовке
+    if header_key:
+        # Если ключ передан в заголовке, используем его напрямую без ротации
+        headers = {
+            'x-rapidapi-key': header_key,
+            'x-rapidapi-host': config['api_host']
+        }
+        try:
+            api_response = requests.get(api_url, headers=headers, timeout=config.get('request_timeout_seconds', 10))
+            logger.info(f"[verify_social_profile_v2] RapidAPI response status={api_response.status_code}")
+            api_response.raise_for_status()
+        except requests.RequestException as e:
+            logger.error(f"[verify_social_profile_v2] RapidAPI request failed for username={username}: {str(e)}", exc_info=True)
+            return Response(
+                {'success': False, 'error': 'Failed to reach Reddit API', 'detail': str(e)},
+                status=status.HTTP_502_BAD_GATEWAY
+            )
+    else:
+        # Используем ротацию ключей
+        api_response, used_key = _try_rapidapi_request_with_rotation(api_url, config, username)
+        if api_response is None:
+            logger.error(f"[verify_social_profile_v2] All RapidAPI keys exhausted for username={username}")
+            return Response(
+                {
+                    'success': False,
+                    'error': 'All RapidAPI keys exhausted',
+                    'detail': 'Rate limit exceeded on all available keys. Please try again later.'
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+        # Проверяем статус ответа после ротации
+        if api_response.status_code != 200:
+            logger.warning(f"[verify_social_profile_v2] Non-200 status {api_response.status_code} after key rotation for username={username}")
+            try:
+                api_response.raise_for_status()
+            except requests.RequestException as e:
+                logger.error(f"[verify_social_profile_v2] RapidAPI request failed after rotation for username={username}: {str(e)}", exc_info=True)
+                return Response(
+                    {'success': False, 'error': 'Failed to reach Reddit API', 'detail': str(e)},
+                    status=status.HTTP_502_BAD_GATEWAY
+                )
+        logger.info(f"[verify_social_profile_v2] Successfully used RapidAPI key for username={username}")
+
+    try:
+        payload = api_response.json()
+    except ValueError as e:
+        logger.error(f"[verify_social_profile_v2] Failed to decode JSON from RapidAPI for username={username}: {str(e)}; raw={api_response.text}")
+        return Response(
+            {'success': False, 'error': 'Invalid JSON from Reddit API'},
+            status=status.HTTP_502_BAD_GATEWAY
+        )
+
+    logger.info(f"[verify_social_profile_v2] RapidAPI payload received for username={username}: success={payload.get('success')}")
+
+    if not payload.get('success'):
+        data_field = payload.get('data')
+        reason = 'USER_NOT_FOUND_OR_BANNED' if isinstance(data_field, str) and data_field.lower() == 'user not found' else 'UPSTREAM_REPORTED_FAILURE'
+        logger.warning(f"[verify_social_profile_v2] Upstream reported failure for username={username}: data={data_field}")
+        return Response(
+            {
+                'success': False,
+                'verified': False,
+                'social_network': 'REDDIT',
+                'username': username,
+                'failed_criteria': ['PROFILE_UNAVAILABLE'],
+                'reason': reason,
+                'upstream_payload': payload
+            },
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    profile_data = payload.get('data') or {}
+    subreddit_data = profile_data.get('subreddit') or {}
+
+    created_ts = profile_data.get('created_utc') or profile_data.get('created')
+    account_age_days = None
+    if created_ts:
+        try:
+            created_dt = datetime.fromtimestamp(created_ts, tz=timezone.utc)
+            account_age_days = (timezone.now() - created_dt).days
+        except Exception as e:
+            logger.error(f"[verify_social_profile_v2] Failed to compute account age for username={username}: {str(e)}", exc_info=True)
+
+    total_karma = profile_data.get('total_karma')
+    is_blocked = profile_data.get('is_blocked')
+    api_name = profile_data.get('name') or ''
+    user_is_banned = subreddit_data.get('user_is_banned')
+    restrict_commenting = subreddit_data.get('restrict_commenting')
+    description = subreddit_data.get('description') or ''
+    public_description = subreddit_data.get('public_description') or ''
+    fingerprint = config['fingerprint']
+    fingerprint_present = fingerprint in description or fingerprint in public_description
+
+    checks = {
+        'username_matches': api_name.lower() == username.lower(),
+        'min_account_age': account_age_days is not None and account_age_days >= config['min_account_age_days'],
+        'min_total_karma': isinstance(total_karma, (int, float)) and total_karma >= config['min_total_karma'],
+        'is_blocked_is_false': is_blocked is False,
+        'user_is_banned_is_false': user_is_banned is False,
+        'restrict_commenting_is_false': restrict_commenting is False,
+        'fingerprint_present': fingerprint_present,
+    }
+
+    failed_criteria = []
+    if not checks['username_matches']:
+        failed_criteria.append('USERNAME_MISMATCH')
+    if not checks['min_account_age']:
+        failed_criteria.append('ACCOUNT_TOO_NEW')
+    if not checks['min_total_karma']:
+        failed_criteria.append('LOW_TOTAL_KARMA')
+    if not checks['is_blocked_is_false']:
+        failed_criteria.append('ACCOUNT_BLOCKED')
+    if not checks['user_is_banned_is_false']:
+        failed_criteria.append('ACCOUNT_BANNED')
+    if not checks['restrict_commenting_is_false']:
+        failed_criteria.append('RESTRICT_COMMENTING')
+    if not checks['fingerprint_present']:
+        failed_criteria.append('FINGERPRINT_MISSING')
+
+    verified = len(failed_criteria) == 0
+    logger.info(
+        f"[verify_social_profile_v2] Verification completed for username={username}, verified={verified}, "
+        f"failed_criteria={failed_criteria}, account_age_days={account_age_days}, total_karma={total_karma}"
+    )
+
+    profile_id = None
+    if verified:
+        try:
+            social_network = SocialNetwork.objects.get(code='REDDIT')
+            profile_defaults = {
+                'social_id': profile_data.get('id'),
+                'username': api_name or username,
+                'profile_url': profile_url,
+                'avatar_url': profile_data.get('icon_img') or profile_data.get('snoovatar_img'),
+                'is_verified': True,
+                'verification_status': 'VERIFIED',
+                'verification_date': timezone.now(),
+                'rejection_reason': None,
+                'followers_count': 0,
+                'following_count': 0,
+                'posts_count': 0,
+                'account_created_at': created_dt if 'created_dt' in locals() else None,
+            }
+            profile, created = UserSocialProfile.objects.get_or_create(
+                user=user,
+                social_network=social_network,
+                defaults=profile_defaults
+            )
+            if not created:
+                profile.social_id = profile_defaults['social_id']
+                profile.username = profile_defaults['username']
+                profile.profile_url = profile_defaults['profile_url']
+                profile.avatar_url = profile_defaults['avatar_url']
+                profile.is_verified = True
+                profile.verification_status = 'VERIFIED'
+                profile.verification_date = profile_defaults['verification_date']
+                profile.rejection_reason = None
+                profile.account_created_at = profile_defaults['account_created_at']
+                profile.save()
+            profile_id = profile.id
+            logger.info(f"[verify_social_profile_v2] Saved verified Reddit profile id={profile_id} for user_id={user.id}")
+        except SocialNetwork.DoesNotExist:
+            logger.error("[verify_social_profile_v2] SocialNetwork REDDIT not found")
+        except Exception as e:
+            logger.error(f"[verify_social_profile_v2] Failed to persist Reddit profile for user_id={user.id}: {str(e)}", exc_info=True)
+
+    response_payload = {
+        'success': True,
+        'verified': verified,
+        'social_network': 'REDDIT',
+        'username': username,
+        'profile_url': profile_url,
+        'profile_id': profile_id,
+        'failed_criteria': failed_criteria,
+        'checks': {
+            **checks,
+            'account_age_days': account_age_days,
+            'total_karma': total_karma,
+            'api_name': api_name,
+            'is_blocked': is_blocked,
+            'user_is_banned': user_is_banned,
+            'restrict_commenting': restrict_commenting,
+            'fingerprint_in_description': fingerprint in description,
+            'fingerprint_in_public_description': fingerprint in public_description,
+            'fingerprint_present': fingerprint_present,
+        },
+    }
+
+    return Response(response_payload, status=status.HTTP_200_OK if verified else status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
 @permission_classes([permissions.AllowAny])

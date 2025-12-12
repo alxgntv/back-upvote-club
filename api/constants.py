@@ -102,3 +102,19 @@ BONUS_ACTION_COUNTRIES = {
 
 # Процент дополнительных бонусных действий (0.3 = +30%)
 BONUS_ACTION_RATE = 0.3
+
+# --- Social profile verification config ---
+# Параметры для проверки Reddit-профиля через RapidAPI reddit34
+REDDIT_VERIFICATION_CONFIG = {
+    'api_host': 'reddit34.p.rapidapi.com',
+    'profile_path': '/getProfile',
+    'min_account_age_days': 100,
+    'min_total_karma': 50,
+    'fingerprint': '🧗‍♂️😄🤩🤖😛',
+    'required_flags': {
+        'is_blocked': False,
+        'user_is_banned': False,
+        'restrict_commenting': False,
+    },
+    'request_timeout_seconds': 10,
+}
