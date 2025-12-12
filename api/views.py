@@ -367,8 +367,46 @@ def verify_social_profile_v2(request):
     if verified:
         try:
             social_network = SocialNetwork.objects.get(code='REDDIT')
+            
+            # Проверка на дубликаты: проверяем, не используется ли этот профиль другим пользователем
+            # Проверяем по profile_url (case-insensitive) и по social_id
+            social_id = profile_data.get('id')
+            profile_url_normalized = profile_url.strip().lower()
+            
+            existing_by_url = UserSocialProfile.objects.filter(
+                social_network=social_network,
+                profile_url__iexact=profile_url_normalized
+            ).exclude(user=user).first()
+            
+            existing_by_social_id = None
+            if social_id:
+                existing_by_social_id = UserSocialProfile.objects.filter(
+                    social_network=social_network,
+                    social_id=social_id
+                ).exclude(user=user).first()
+            
+            if existing_by_url or existing_by_social_id:
+                existing_profile = existing_by_social_id or existing_by_url
+                logger.warning(
+                    f"[verify_social_profile_v2] Profile already used by another user: "
+                    f"current_user_id={user.id}, existing_user_id={existing_profile.user.id}, "
+                    f"profile_url={profile_url}, social_id={social_id}, "
+                    f"matched_by={'social_id' if existing_by_social_id else 'profile_url'}"
+                )
+                return Response(
+                    {
+                        'success': False,
+                        'verified': False,
+                        'error': 'This social profile is already used by another user.',
+                        'social_network': 'REDDIT',
+                        'username': username,
+                        'profile_url': profile_url,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
             profile_defaults = {
-                'social_id': profile_data.get('id'),
+                'social_id': social_id,
                 'username': api_name or username,
                 'profile_url': profile_url,
                 'avatar_url': profile_data.get('icon_img') or profile_data.get('snoovatar_img'),
