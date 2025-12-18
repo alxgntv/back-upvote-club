@@ -1442,3 +1442,38 @@ class Review(models.Model):
 
     def __str__(self):
         return f"Review by {self.user.username} for task {self.task_id} ({self.rating}★)"
+
+class ApiKey(models.Model):
+    """
+    Модель для хранения API ключей пользователей для публичного API.
+    Оригинальный ключ не хранится - только хеш для безопасности.
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='api_keys', help_text='User who owns this API key')
+    key_hash = models.CharField(max_length=128, unique=True, db_index=True, help_text='Hashed API key for verification')
+    name = models.CharField(max_length=255, null=True, blank=True, help_text='Optional name/description for the API key')
+    is_active = models.BooleanField(default=True, help_text='Whether the API key is active')
+    last_used_at = models.DateTimeField(null=True, blank=True, help_text='Last time the API key was used')
+    created_at = models.DateTimeField(auto_now_add=True, help_text='When the API key was created')
+    expires_at = models.DateTimeField(null=True, blank=True, help_text='Optional expiration date for the API key')
+    
+    class Meta:
+        verbose_name = 'API Key'
+        verbose_name_plural = 'API Keys'
+        indexes = [
+            models.Index(fields=['key_hash', 'is_active']),
+            models.Index(fields=['user', 'is_active']),
+        ]
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"API Key for {self.user.username} ({'active' if self.is_active else 'inactive'})"
+    
+    def is_expired(self):
+        """Проверяет, истек ли срок действия ключа"""
+        if self.expires_at is None:
+            return False
+        return timezone.now() > self.expires_at
+    
+    def is_valid(self):
+        """Проверяет, валиден ли ключ (активен и не истек)"""
+        return self.is_active and not self.is_expired()

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Task, TaskCompletion, UserProfile, InviteCode, EmailCampaign, EmailSubscriptionType, UserEmailSubscription, SocialNetwork, UserSocialProfile, PostCategory, PostTag, BlogPost, TwitterServiceAccount, ActionType, TwitterUserMapping, PaymentTransaction, TaskReport, ActionLanding, BuyLanding, Landing, Withdrawal, OnboardingProgress, Review
+from .models import Task, TaskCompletion, UserProfile, InviteCode, EmailCampaign, EmailSubscriptionType, UserEmailSubscription, SocialNetwork, UserSocialProfile, PostCategory, PostTag, BlogPost, TwitterServiceAccount, ActionType, TwitterUserMapping, PaymentTransaction, TaskReport, ActionLanding, BuyLanding, Landing, Withdrawal, OnboardingProgress, Review, ApiKey
 from django.utils import timezone
 import logging
 from django.template import Template, Context
@@ -2872,3 +2872,86 @@ class ReviewAdmin(admin.ModelAdmin):
             return '-'
     get_user_country.short_description = 'Country'
     get_user_country.admin_order_field = 'user__userprofile__chosen_country'
+
+@admin.register(ApiKey)
+class ApiKeyAdmin(admin.ModelAdmin):
+    """
+    Админка для управления API ключами.
+    Ключ показывается только в скрытом виде (первые 8 символов + ...)
+    """
+    list_display = [
+        'id',
+        'user',
+        'get_masked_key',
+        'name',
+        'is_active',
+        'last_used_at',
+        'created_at',
+        'expires_at',
+        'is_expired_display'
+    ]
+    list_filter = [
+        'is_active',
+        'created_at',
+        'last_used_at',
+        'expires_at'
+    ]
+    search_fields = [
+        'user__username',
+        'name',
+        'key_hash'
+    ]
+    readonly_fields = [
+        'key_hash',
+        'created_at',
+        'last_used_at',
+        'get_masked_key_full'
+    ]
+    fieldsets = (
+        ('Основная информация', {
+            'fields': ('user', 'name', 'is_active')
+        }),
+        ('Ключ (скрыт)', {
+            'fields': ('get_masked_key_full', 'key_hash'),
+            'description': 'API ключ хранится в зашифрованном виде. Полный ключ показывается только при создании.'
+        }),
+        ('Даты', {
+            'fields': ('created_at', 'last_used_at', 'expires_at')
+        }),
+    )
+    
+    def get_masked_key(self, obj):
+        """Показывает замаскированный хеш в списке"""
+        if obj.key_hash:
+            # Показываем первые 8 символов хеша + ...
+            masked = obj.key_hash[:8] + '...' + obj.key_hash[-4:] if len(obj.key_hash) > 12 else obj.key_hash[:8] + '...'
+            return format_html('<code>{}</code>', masked)
+        return '-'
+    get_masked_key.short_description = 'Key Hash (masked)'
+    
+    def get_masked_key_full(self, obj):
+        """Показывает замаскированный хеш в форме редактирования"""
+        if obj.key_hash:
+            # Показываем первые 8 символов хеша + ...
+            masked = obj.key_hash[:8] + '...' + obj.key_hash[-4:] if len(obj.key_hash) > 12 else obj.key_hash[:8] + '...'
+            return format_html(
+                '<code style="font-size: 12px; background: #f5f5f5; padding: 5px; border-radius: 3px;">{}</code><br>'
+                '<small style="color: #666;">Оригинальный ключ не хранится в базе данных (только хеш)</small>',
+                masked
+            )
+        return format_html('<em>Хеш ключа не найден</em>')
+    get_masked_key_full.short_description = 'Key Hash'
+    
+    def is_expired_display(self, obj):
+        """Показывает статус истечения срока действия"""
+        if obj.expires_at is None:
+            return format_html('<span style="color: #666;">Never</span>')
+        if obj.is_expired():
+            return format_html('<span style="color: red;">Expired</span>')
+        return format_html('<span style="color: green;">Active</span>')
+    is_expired_display.short_description = 'Expiration Status'
+    
+    def get_readonly_fields(self, request, obj=None):
+        """Делаем key_hash всегда readonly"""
+        readonly = list(self.readonly_fields)
+        return readonly
