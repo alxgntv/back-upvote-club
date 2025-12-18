@@ -1593,6 +1593,9 @@ def create_task(request):
                 except Exception:
                     bonus_actions = 0
 
+            # Получаем значение is_pinned из запроса
+            is_pinned = request.data.get('is_pinned', False)
+            
             # Сохраняем задание с оригинальной ценой и бонусными действиями
             task = serializer.save(
                 creator=request.user,
@@ -1600,7 +1603,8 @@ def create_task(request):
                 price=price,  # Устанавливаем базовую цену
                 status='ACTIVE',  # Явно указываем статус
                 bonus_actions=bonus_actions,
-                bonus_actions_completed=0
+                bonus_actions_completed=0,
+                is_pinned=bool(is_pinned)  # Явно передаем is_pinned
             )
             
             # Уменьшаем количество доступных заданий
