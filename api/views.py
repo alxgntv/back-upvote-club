@@ -1319,26 +1319,18 @@ def tasks1(request):
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
-@permission_classes([permissions.IsAuthenticated if settings.COMPLETE_TASK_REQUIRES_AUTH else permissions.AllowAny])
-@authentication_classes([JWTAuthentication] if settings.COMPLETE_TASK_REQUIRES_AUTH else [])
+@permission_classes([permissions.IsAuthenticated])
+@authentication_classes([JWTAuthentication])
 def complete_task(request, task_id):
     try:
+        # Используем request.user вместо user из запроса для безопасности
+        user = request.user
+        user_profile = user.userprofile
         
         action = request.data.get('action')
-        user_id = request.data.get('user')
         metadata = request.data.get('metadata')
         
-        try:
-            user_id = int(user_id)
-            user_profile = UserProfile.objects.get(id=user_id)
-            user = user_profile.user
-            print(f"Found user: {user.id}, through profile: {user_profile.id}")
-        except (ValueError, TypeError) as e:
-            print(f"Error converting user_id: {e}")
-            return Response({'error': 'Invalid user ID format'}, status=status.HTTP_400_BAD_REQUEST)
-        except UserProfile.DoesNotExist:
-            print(f"UserProfile not found with id: {user_id}")
-            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        logger.info(f"[complete_task] User {user.id} (profile {user_profile.id}) attempting to complete task {task_id}")
 
         if not action:
             return Response({'error': 'Action parameter is required'}, status=status.HTTP_400_BAD_REQUEST)
