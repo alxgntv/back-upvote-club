@@ -521,6 +521,28 @@ def register_user(request):
                     invited_by=inviter_user  # Устанавливаем связь с пригласившим
                 )
                 
+                # Отправляем email уведомление создателю промокода
+                if inviter_user:
+                    try:
+                        inviter_firebase_user = auth.get_user(inviter_user.username)
+                        inviter_email = inviter_firebase_user.email
+                        
+                        if inviter_email:
+                            email_service = EmailService()
+                            html_content = (
+                                "<p>Your friend has registered using your referral code!</p>"
+                                "<p>Once they complete 20 tasks, you will receive a reward of 30 points.</p>"
+                                "<p>Invite more friends: <a href='https://upvote.club/dashboard/referral' target='_blank'>https://upvote.club/dashboard/referral</a></p>"
+                            )
+                            email_service.send_email(
+                                to_email=inviter_email,
+                                subject='Your friend registered using your referral code!',
+                                html_content=html_content
+                            )
+                            logger.info(f"[register_user] Sent referral notification email to {inviter_email} for user {inviter_user.id}")
+                    except Exception as e:
+                        logger.error(f"[register_user] Error sending referral notification email: {str(e)}")
+                
                 # Создаем безлимитный инвайт-код для нового пользователя
                 user_profile.update_available_tasks()
                 new_invite_code = user_profile.create_unlimited_invite_code()
@@ -1399,10 +1421,73 @@ def complete_task(request, task_id):
                 # Награда начисляется только за основные действия, бонусы бесплатные для автора
                 reward = task.original_price / task.actions_required / 2
                 
+                # Сохраняем старое значение bonus_tasks_completed для проверки награды за 20 заданий
+                old_bonus_tasks_completed = user_profile.bonus_tasks_completed
+                
                 user_profile.balance += reward
                 user_profile.completed_tasks_count += 1
                 user_profile.bonus_tasks_completed += 1
                 user_profile.save()
+                
+                # Проверяем, достиг ли приглашенный пользователь 20 заданий для награды реферальной программы
+                if old_bonus_tasks_completed == 19 and user_profile.bonus_tasks_completed == 20 and user_profile.invited_by:
+                    try:
+                        inviter_user = user_profile.invited_by
+                        inviter_profile = inviter_user.userprofile
+                        
+                        # Начисляем по 30 поинтов обоим пользователям
+                        user_profile.balance += 30
+                        inviter_profile.balance += 30
+                        user_profile.save(update_fields=['balance'])
+                        inviter_profile.save(update_fields=['balance'])
+                        
+                        logger.info(f"[complete_task] Referral reward: User {user.id} completed 20 tasks. Rewarded {user.id} and {inviter_user.id} with 30 points each")
+                        
+                        # Отправляем email приглашенному пользователю
+                        try:
+                            invited_firebase_user = auth.get_user(user.username)
+                            invited_email = invited_firebase_user.email
+                            
+                            if invited_email:
+                                email_service = EmailService()
+                                html_content = (
+                                    "<p>Congratulations! You completed your first 20 tasks!</p>"
+                                    "<p>You received 30 extra points as a reward.</p>"
+                                    "<p>Invite more friends: <a href='https://upvote.club/dashboard/referral' target='_blank'>https://upvote.club/dashboard/referral</a></p>"
+                                )
+                                email_service.send_email(
+                                    to_email=invited_email,
+                                    subject='Congratulations! You completed 20 tasks and earned 30 extra points!',
+                                    html_content=html_content
+                                )
+                                logger.info(f"[complete_task] Sent 20 tasks completion email to {invited_email}")
+                        except Exception as e:
+                            logger.error(f"[complete_task] Error sending email to invited user: {str(e)}")
+                        
+                        # Отправляем email пригласившему пользователю
+                        try:
+                            inviter_firebase_user = auth.get_user(inviter_user.username)
+                            inviter_email = inviter_firebase_user.email
+                            
+                            if inviter_email:
+                                email_service = EmailService()
+                                html_content = (
+                                    "<p>Great news! Your friend completed 20 tasks!</p>"
+                                    "<p>You received 30 points as a reward.</p>"
+                                    "<p>Invite more friends: <a href='https://upvote.club/dashboard/referral' target='_blank'>https://upvote.club/dashboard/referral</a></p>"
+                                )
+                                email_service.send_email(
+                                    to_email=inviter_email,
+                                    subject='Your friend completed 20 tasks - You earned 30 points!',
+                                    html_content=html_content
+                                )
+                                logger.info(f"[complete_task] Sent referral reward email to {inviter_email}")
+                        except Exception as e:
+                            logger.error(f"[complete_task] Error sending email to inviter user: {str(e)}")
+                            
+                    except Exception as e:
+                        logger.error(f"[complete_task] Error processing referral reward: {str(e)}", exc_info=True)
+                
                 return Response({
                     'message': 'Task completed successfully',
                     'reward': reward,
