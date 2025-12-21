@@ -575,6 +575,7 @@ class UserSocialProfile(models.Model):
     rejection_reason = models.CharField(max_length=50, choices=[
         ('NO_EMOJI', 'No Emoji'),
         ('DOES_NOT_MEET_CRITERIA', 'Profile does not meet criteria'),
+        ('URL_UNAVAILABLE', 'URL Unavailable'),
     ], null=True, blank=True, help_text='Reason for rejection if profile was rejected')
     
     oauth_token = models.CharField(max_length=255, null=True, blank=True)

@@ -68,7 +68,6 @@ from dateutil.relativedelta import relativedelta
 from .email_service import EmailService
 from django.core.mail import send_mail
 from decimal import Decimal
-from .helpers.linkedin_helper import verify_linkedin_profile_by_url
 
 logger = logging.getLogger('api')
 
@@ -4181,98 +4180,8 @@ def verify_social_profile(request):
             profile.save()
             logger.info(f"[verify_social_profile] Profile updated: id={profile.id}, user_id={profile.user.id}, username={profile.username}")
 
-        # Для LinkedIn используем автоматическую верификацию через Apify
-        if social_network_code == 'LINKEDIN':
-            logger.info(f"[verify_social_profile] LinkedIn profile detected, starting Apify verification for: {profile_url}")
-            # Используем оригинальный URL для Apify, так как он чувствителен к регистру
-            is_valid, profile_data, validation_result = verify_linkedin_profile_by_url(profile_url.strip())
-            
-            if not is_valid:
-                # Профиль не прошел проверку
-                failed_criteria = validation_result.get('failed_criteria', [])
-                details = validation_result.get('details', {})
-                
-                logger.warning(f"[verify_social_profile] LinkedIn profile verification failed. Failed criteria: {failed_criteria}")
-                
-                # Обновляем статус профиля на REJECTED
-                profile.verification_status = 'REJECTED'
-                if 'PROFILE_MUST_HAVE_EMOJI_FINGERPRINT' in failed_criteria:
-                    profile.rejection_reason = 'NO_EMOJI'
-                else:
-                    profile.rejection_reason = 'DOES_NOT_MEET_CRITERIA'
-                profile.save()
-                
-                # Формируем детальное сообщение об ошибке
-                error_messages = []
-                if 'FAILED_TO_FETCH_PROFILE_DATA' in failed_criteria:
-                    apify_error = details.get('error', '')
-                    if 'free Apify plan' in apify_error:
-                        error_messages.append("Apify service is currently unavailable. Please contact support at yes@upvote.club for manual verification.")
-                    else:
-                        error_messages.append("Failed to fetch profile data from Apify. Please try again later or contact support at yes@upvote.club.")
-                if 'MINIMUM_CONNECTIONS_OR_FOLLOWERS' in failed_criteria:
-                    error_messages.append(f"Minimum 100 connections or followers required. You have {details.get('total_connections_followers', 0)}.")
-                if 'PROFILE_MUST_HAVE_AVATAR' in failed_criteria:
-                    error_messages.append("Profile must have an avatar.")
-                if 'CLEAR_PROFILE_DESCRIPTION' in failed_criteria:
-                    error_messages.append("Profile must have a clear description (who you are, what you do).")
-                if 'PROFILE_MUST_HAVE_EMOJI_FINGERPRINT' in failed_criteria:
-                    error_messages.append(f"Profile must contain all emoji fingerprint: {', '.join(['🧗‍♂️', '😄', '🤩', '🤖', '😛'])}")
-                if 'PROFILE_MUST_HAVE_1_PLACE_OF_WORK' in failed_criteria:
-                    error_messages.append("Profile must have at least 1 place of work.")
-                
-                return Response({
-                    'success': False,
-                    'error': 'Profile does not meet verification criteria',
-                    'failed_criteria': failed_criteria,
-                    'details': details,
-                    'messages': error_messages
-                }, status=400)
-            
-            # Профиль прошел проверку - автоматически верифицируем
-            logger.info(f"[verify_social_profile] LinkedIn profile verification passed. Auto-verifying profile id={profile.id}")
-            profile.verification_status = 'VERIFIED'
-            profile.is_verified = True
-            profile.verification_date = timezone.now()
-            
-            # Сохраняем дополнительные данные из Apify, если они есть
-            if profile_data:
-                if profile_data.get('profilePic') or profile_data.get('profilePicHighQuality'):
-                    profile.avatar_url = profile_data.get('profilePic') or profile_data.get('profilePicHighQuality')
-                if profile_data.get('followers'):
-                    profile.followers_count = profile_data.get('followers', 0) or 0
-                if profile_data.get('connections'):
-                    profile.following_count = profile_data.get('connections', 0) or 0
-            
-            profile.save()
-            logger.info(f"[verify_social_profile] LinkedIn profile verified successfully: id={profile.id}")
-            
-            return Response({
-                'success': True,
-                'profile_id': profile.id,
-                'message': 'Your LinkedIn profile has been verified successfully!',
-                'verified': True
-            }, status=200)
-
-        # Отправляем письмо админу (один раз, не в цикле)
-        admin_email = getattr(settings, 'ADMIN_EMAIL', 'yes@upvote.club')
-        email_service = EmailService()
-        admin_link = f"{settings.BACKEND_ADMIN_URL}/admin/api/usersocialprofile/{profile.id}/change/"
-        html_content = f"""
-        <h2>New profile for verification</h2>
-        <p>User: {user.username} (ID: {user.id})</p>
-        <p>Social Network: {social_network.name}</p>
-        <p>Profile URL: <a href='{profile_url_normalized}'>{profile_url_normalized}</a></p>
-        <p><a href='{admin_link}'>Moderate in admin</a></p>
-        """
-        email_service.send_email(
-            to_email=admin_email,
-            subject='New Social Profile Pending Verification',
-            html_content=html_content
-        )
-        logger.info(f"[verify_social_profile] Notification email sent to admin: {admin_email}")
-
         # Отправляем уведомление в Telegram с кнопками
+        admin_link = f"{settings.BACKEND_ADMIN_URL}/admin/api/usersocialprofile/{profile.id}/change/"
         try:
             TELEGRAM_BOT_TOKEN = '8045516781:AAFdnzHGd78LIeCyW5ygkO8yVk1jY3p5J1Y'
             TELEGRAM_CHAT_ID = '133814301'
@@ -4301,6 +4210,12 @@ def verify_social_profile(request):
                         {
                             'text': '❌ Reject - Does not meet criteria',
                             'callback_data': f'moderate_profile_{profile.id}_reject_criteria'
+                        }
+                    ],
+                    [
+                        {
+                            'text': '❌ Reject - URL Unavailable',
+                            'callback_data': f'moderate_profile_{profile.id}_reject_url_unavailable'
                         }
                     ]
                 ]
@@ -4753,6 +4668,50 @@ def telegram_webhook(request):
                         
                         # Отправляем ответ в Telegram
                         send_telegram_message(chat_id, f"❌ Profile {profile.username} rejected - Does not meet criteria", message_id)
+                    
+                    elif action == 'reject_url_unavailable':
+                        # Проверяем, что профиль еще не отклонен с этой причиной (защита от дублирования)
+                        if profile.verification_status == 'REJECTED' and profile.rejection_reason == 'URL_UNAVAILABLE':
+                            answer_callback_query('Profile already rejected')
+                            return Response({'status': 'ok'})
+                        
+                        # Отклоняем профиль - URL недоступен
+                        profile.verification_status = 'REJECTED'
+                        profile.is_verified = False
+                        profile.verification_date = timezone.now()
+                        profile.rejection_reason = 'URL_UNAVAILABLE'
+                        profile.save()
+                        
+                        logger.info(f"[telegram_webhook] Profile {profile.id} rejected - URL Unavailable. User: {profile.user.username}")
+                        
+                        # Отправляем email пользователю
+                        try:
+                            user_email = profile.user.email
+                            if not user_email:
+                                from firebase_admin import auth
+                                firebase_user = auth.get_user(profile.user.username)
+                                user_email = firebase_user.email
+                            
+                            if user_email:
+                                email_service = EmailService()
+                                html_content = (
+                                    '<p>URL который вы отправили на модерацию недоступен, проверьте его еще раз и отправьте заново.</p>'
+                                    '<p>URL: <b>' + profile.profile_url + '</b></p>'
+                                )
+                                email_service.send_email(
+                                    to_email=user_email,
+                                    subject='URL недоступен - проверьте и отправьте заново',
+                                    html_content=html_content
+                                )
+                                logger.info(f"[telegram_webhook] Email sent to user {profile.user.username} ({user_email}) about URL unavailability")
+                        except Exception as e:
+                            logger.error(f"[telegram_webhook] Error sending email to user {profile.user.username}: {str(e)}", exc_info=True)
+                        
+                        # Отвечаем на callback_query
+                        answer_callback_query('Profile rejected - URL Unavailable')
+                        
+                        # Отправляем ответ в Telegram
+                        send_telegram_message(chat_id, f"❌ Profile {profile.username} rejected - URL Unavailable", message_id)
                     
                 except UserSocialProfile.DoesNotExist:
                     answer_callback_query('Profile not found')
