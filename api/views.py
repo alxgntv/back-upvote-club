@@ -4695,12 +4695,12 @@ def telegram_webhook(request):
                             if user_email:
                                 email_service = EmailService()
                                 html_content = (
-                                    '<p>URL который вы отправили на модерацию недоступен, проверьте его еще раз и отправьте заново.</p>'
+                                    '<p>The URL you submitted for moderation is unavailable. Please check it again and resubmit.</p>'
                                     '<p>URL: <b>' + profile.profile_url + '</b></p>'
                                 )
                                 email_service.send_email(
                                     to_email=user_email,
-                                    subject='URL недоступен - проверьте и отправьте заново',
+                                    subject='Profile URL Unavailable - Please resubmit',
                                     html_content=html_content
                                 )
                                 logger.info(f"[telegram_webhook] Email sent to user {profile.user.username} ({user_email}) about URL unavailability")
