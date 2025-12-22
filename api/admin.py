@@ -7,7 +7,7 @@ from .email_service import EmailService
 from django.conf import settings
 from django.utils.html import format_html
 from django.db import models
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Subquery, OuterRef, IntegerField, Coalesce
 from django.utils.html import format_html
 from markdownx.admin import MarkdownxModelAdmin
 from django.forms import forms, Form
@@ -2787,11 +2787,23 @@ class WithdrawalAdmin(admin.ModelAdmin):
     
     def get_queryset(self, request):
         """Оптимизация запросов для админки"""
+        # Используем Subquery для точного подсчета верифицированных профилей
+        verified_count_subquery = UserSocialProfile.objects.filter(
+            user=OuterRef('user_id'),
+            verification_status='VERIFIED'
+        ).aggregate(count=Count('id'))['count']
+        
         return super().get_queryset(request).select_related('user').annotate(
-            completed_tasks_count=Count('user__taskcompletion'),
-            verified_social_profiles_count=Count(
-                'user__social_profiles',
-                filter=Q(user__social_profiles__verification_status='VERIFIED')
+            completed_tasks_count=Count('user__taskcompletion', distinct=True),
+            verified_social_profiles_count=Coalesce(
+                Subquery(
+                    UserSocialProfile.objects.filter(
+                        user=OuterRef('user_id'),
+                        verification_status='VERIFIED'
+                    ).values('user').annotate(count=Count('id')).values('count')[:1],
+                    output_field=IntegerField()
+                ),
+                0
             )
         )
     
@@ -2806,7 +2818,8 @@ class WithdrawalAdmin(admin.ModelAdmin):
     def get_verified_social_profiles_count(self, obj):
         """Получает количество верифицированных социальных сетей для пользователя"""
         if hasattr(obj, 'verified_social_profiles_count'):
-            return obj.verified_social_profiles_count
+            count = obj.verified_social_profiles_count
+            return count if count is not None else 0
         return UserSocialProfile.objects.filter(
             user=obj.user,
             verification_status='VERIFIED'
