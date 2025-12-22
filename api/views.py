@@ -341,20 +341,28 @@ def verify_social_profile_v2(request):
     }
 
     failed_criteria = []
-    if not checks['username_matches']:
-        failed_criteria.append('USERNAME_MISMATCH')
-    if not checks['min_account_age']:
-        failed_criteria.append('ACCOUNT_TOO_NEW')
-    if not checks['min_total_karma']:
-        failed_criteria.append('LOW_TOTAL_KARMA')
+    
+    # Сначала проверяем самые жесткие критерии
     if not checks['is_blocked_is_false']:
         failed_criteria.append('ACCOUNT_BLOCKED')
     if not checks['user_is_banned_is_false']:
         failed_criteria.append('ACCOUNT_BANNED')
-    if not checks['restrict_commenting_is_false']:
-        failed_criteria.append('RESTRICT_COMMENTING')
+    
+    # Потом проверяем фингерпринт
     if not checks['fingerprint_present']:
         failed_criteria.append('FINGERPRINT_MISSING')
+    
+    # Если аккаунт не забанен и есть фингерпринт, проверяем остальные критерии
+    account_is_valid = checks['is_blocked_is_false'] and checks['user_is_banned_is_false'] and checks['fingerprint_present']
+    if account_is_valid:
+        if not checks['username_matches']:
+            failed_criteria.append('USERNAME_MISMATCH')
+        if not checks['min_account_age']:
+            failed_criteria.append('ACCOUNT_TOO_NEW')
+        if not checks['min_total_karma']:
+            failed_criteria.append('LOW_TOTAL_KARMA')
+        if not checks['restrict_commenting_is_false']:
+            failed_criteria.append('RESTRICT_COMMENTING')
 
     verified = len(failed_criteria) == 0
     logger.info(
