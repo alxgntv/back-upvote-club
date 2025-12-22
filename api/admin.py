@@ -2726,6 +2726,7 @@ class WithdrawalAdmin(admin.ModelAdmin):
         'id',
         'user',
         'get_completed_tasks_count',
+        'get_verified_social_profiles_count',
         'amount_usd',
         'points_sold', 
         'withdrawal_method',
@@ -2787,7 +2788,11 @@ class WithdrawalAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         """Оптимизация запросов для админки"""
         return super().get_queryset(request).select_related('user').annotate(
-            completed_tasks_count=Count('user__taskcompletion')
+            completed_tasks_count=Count('user__taskcompletion'),
+            verified_social_profiles_count=Count(
+                'user__social_profiles',
+                filter=Q(user__social_profiles__verification_status='VERIFIED')
+            )
         )
     
     def get_completed_tasks_count(self, obj):
@@ -2797,6 +2802,17 @@ class WithdrawalAdmin(admin.ModelAdmin):
         return TaskCompletion.objects.filter(user=obj.user).count()
     get_completed_tasks_count.short_description = 'Completed Tasks'
     get_completed_tasks_count.admin_order_field = 'completed_tasks_count'
+    
+    def get_verified_social_profiles_count(self, obj):
+        """Получает количество верифицированных социальных сетей для пользователя"""
+        if hasattr(obj, 'verified_social_profiles_count'):
+            return obj.verified_social_profiles_count
+        return UserSocialProfile.objects.filter(
+            user=obj.user,
+            verification_status='VERIFIED'
+        ).count()
+    get_verified_social_profiles_count.short_description = 'Verified Social Networks'
+    get_verified_social_profiles_count.admin_order_field = 'verified_social_profiles_count'
     
     def mark_as_processing(self, request, queryset):
         """Отметить как обрабатывается"""
