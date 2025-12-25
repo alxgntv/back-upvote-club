@@ -4805,6 +4805,69 @@ def telegram_webhook(request):
                     answer_callback_query('Error occurred')
                     send_telegram_message(chat_id, f"❌ Error: {str(e)}", message_id)
         
+        # Обработка callback для верификации вебсайта/статьи
+        if callback_data.startswith('approve_website_'):
+            parts = callback_data.split('_')
+            if len(parts) >= 4:
+                user_id = parts[2]
+                content_type = parts[3]  # 'article' или 'website'
+                
+                try:
+                    user = User.objects.get(id=user_id)
+                    
+                    # Получаем email пользователя из Firebase
+                    try:
+                        firebase_user = auth.get_user(user.username)
+                        user_email = firebase_user.email
+                        
+                        if user_email:
+                            email_service = EmailService()
+                            
+                            if content_type == 'article':
+                                html_content = (
+                                    "<p>Great news! Your referal link looks perfect!</p>"
+                                    "<p>Keep publishing your referal link to get more points 🚀</p>"
+                                    "<p>Also, you can create post at reddit and quora to get more points 🚀</p>"
+                                )
+                                subject = 'Your referal link looks perfect!'
+                            else:
+                                html_content = (
+                                    "<p>Great news! Your referal link looks perfect!</p>"
+                                    "<p>Keep publishing your referal link to get more points 🚀</p>"
+                                    "<p>Also, you can create post at reddit and quora to get more points 🚀</p>"    
+                                )
+                                subject = 'Your referal link looks perfect!'
+                            
+                            email_service.send_email(
+                                to_email=user_email,
+                                subject=subject,
+                                html_content=html_content
+                            )
+                            
+                            logger.info(f"[telegram_webhook] Sent positive email to user {user.id} ({user_email}) for {content_type}")
+                            
+                            # Отвечаем на callback_query
+                            answer_callback_query('Email sent successfully')
+                            
+                            # Отправляем ответ в Telegram
+                            content_type_name = 'article' if content_type == 'article' else 'website'
+                            send_telegram_message(chat_id, f"✅ Positive email sent to user {user.username} for {content_type_name}!", message_id)
+                        else:
+                            answer_callback_query('User email not found')
+                            send_telegram_message(chat_id, f"❌ Email not found for user {user.username}", message_id)
+                            
+                    except Exception as e:
+                        logger.error(f"[telegram_webhook] Error getting Firebase user or sending email: {str(e)}", exc_info=True)
+                        answer_callback_query('Error sending email')
+                        send_telegram_message(chat_id, f"❌ Error: {str(e)}", message_id)
+                        
+                except User.DoesNotExist:
+                    answer_callback_query('User not found')
+                    send_telegram_message(chat_id, "❌ User not found", message_id)
+                except Exception as e:
+                    answer_callback_query('Error occurred')
+                    send_telegram_message(chat_id, f"❌ Error: {str(e)}", message_id)
+        
         return Response({'status': 'ok'})
         
     except Exception as e:
@@ -4939,11 +5002,24 @@ def verify_website(request):
                     f"Referral Link: {invite_link}"
                 )
             
+            # Создаем inline клавиатуру с кнопкой для отправки положительного письма
+            keyboard = {
+                'inline_keyboard': [
+                    [
+                        {
+                            'text': '✅ Send positive email',
+                            'callback_data': f'approve_website_{user.id}_{"article" if is_article else "website"}'
+                        }
+                    ]
+                ]
+            }
+            
             telegram_url = f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage'
             telegram_payload = {
                 'chat_id': TELEGRAM_CHAT_ID,
                 'text': telegram_message,
-                'parse_mode': 'HTML'
+                'parse_mode': 'HTML',
+                'reply_markup': json.dumps(keyboard)
             }
             response = requests.post(telegram_url, data=telegram_payload, timeout=10)
             logger.info(f"[verify_website] Telegram notify response: {response.status_code} {response.text}")

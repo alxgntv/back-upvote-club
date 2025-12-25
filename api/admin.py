@@ -7,7 +7,8 @@ from .email_service import EmailService
 from django.conf import settings
 from django.utils.html import format_html
 from django.db import models
-from django.db.models import Count, Q, Subquery, OuterRef, IntegerField, Coalesce
+from django.db.models import Count, Q, Subquery, OuterRef, IntegerField
+from django.db.models.functions import Coalesce
 from django.utils.html import format_html
 from markdownx.admin import MarkdownxModelAdmin
 from django.forms import forms, Form
