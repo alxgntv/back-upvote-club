@@ -2788,12 +2788,6 @@ class WithdrawalAdmin(admin.ModelAdmin):
     
     def get_queryset(self, request):
         """Оптимизация запросов для админки"""
-        # Используем Subquery для точного подсчета верифицированных профилей
-        verified_count_subquery = UserSocialProfile.objects.filter(
-            user=OuterRef('user_id'),
-            verification_status='VERIFIED'
-        ).aggregate(count=Count('id'))['count']
-        
         return super().get_queryset(request).select_related('user').annotate(
             completed_tasks_count=Count('user__taskcompletion', distinct=True),
             verified_social_profiles_count=Coalesce(
