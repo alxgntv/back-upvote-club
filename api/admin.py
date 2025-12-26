@@ -2857,24 +2857,26 @@ original_index = admin.site.index
 
 def custom_admin_index(request, extra_context=None):
     """Кастомная главная страница админки с дополнительными ссылками"""
-    response = original_index(request, extra_context)
-    
-    if hasattr(response, 'context_data'):
-        custom_links = [
-            {
-                'title': '🔍 Фильтрация пользователей', 
-                'url': '/admin/user-filter/',
-                'description': 'Расширенная фильтрация пользователей с экспортом в CSV'
-            }
-        ]
+    try:
+        response = original_index(request, extra_context)
         
-        if response.context_data is None:
-            response.context_data = {}
-        response.context_data['custom_tools'] = custom_links
-    
-    return response
-
-admin.site.index = custom_admin_index
+        if isinstance(response, TemplateResponse):
+            custom_links = [
+                {
+                    'title': '🔍 Фильтрация пользователей', 
+                    'url': '/admin/user-filter/',
+                    'description': 'Расширенная фильтрация пользователей с экспортом в CSV'
+                }
+            ]
+            
+            if not hasattr(response, 'context_data') or response.context_data is None:
+                response.context_data = {}
+            response.context_data['custom_tools'] = custom_links
+        
+        return response
+    except Exception as e:
+        logger.error(f"[custom_admin_index] Error in custom admin index: {str(e)}", exc_info=True)
+        return original_index(request, extra_context)
 
 @admin.register(OnboardingProgress)
 class OnboardingProgressAdmin(admin.ModelAdmin):
