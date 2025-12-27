@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import UserProfile, Task, TaskCompletion, InviteCode, SocialNetwork, UserSocialProfile, BlogPost, PostCategory, PostTag, TaskReport, ActionType, ActionLanding, PaymentTransaction, Withdrawal, OnboardingProgress, Review, BuyLanding
+from .models import UserProfile, Task, TaskCompletion, InviteCode, SocialNetwork, UserSocialProfile, BlogPost, PostCategory, PostTag, TaskReport, ActionType, ActionLanding, PaymentTransaction, Withdrawal, OnboardingProgress, Review, BuyLanding, CrowdTask
 from django.utils import timezone
 import logging
 from django.utils.dateparse import parse_datetime
@@ -13,6 +13,30 @@ class SocialNetworkSerializer(serializers.ModelSerializer):
     class Meta:
         model = SocialNetwork
         fields = ['id', 'name', 'code', 'icon', 'is_active', 'created_at']
+
+class CrowdTaskSerializer(serializers.ModelSerializer):
+    """Сериализатор для CrowdTask (комментариев к заданию)"""
+    assigned_to_id = serializers.IntegerField(source='assigned_to.id', read_only=True, allow_null=True)
+    assigned_to_username = serializers.CharField(source='assigned_to.username', read_only=True, allow_null=True)
+    
+    class Meta:
+        model = CrowdTask
+        fields = [
+            'id',
+            'text',
+            'url',
+            'status',
+            'sent',
+            'confirmed_by_parser',
+            'parser_log',
+            'confirmed_by_user',
+            'user_log',
+            'assigned_to_id',
+            'assigned_to_username',
+            'created_at',
+            'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'assigned_to_id', 'assigned_to_username']
 
 class TaskCompletionSerializer(serializers.ModelSerializer):
     social_data = serializers.SerializerMethodField()
@@ -71,11 +95,19 @@ class TaskCompletionSerializer(serializers.ModelSerializer):
 class TaskSerializer(serializers.ModelSerializer):
     creator_id = serializers.IntegerField(source='creator.id', read_only=True)
     completions = TaskCompletionSerializer(many=True, read_only=True)
+    crowd_tasks = CrowdTaskSerializer(many=True, read_only=True)
     social_network = SocialNetworkSerializer(read_only=True)
     social_network_code = serializers.CharField(write_only=True)
     is_pinned = serializers.BooleanField(default=False)
     my_review = serializers.SerializerMethodField(read_only=True)
     has_review = serializers.SerializerMethodField(read_only=True)
+    # Для обратной совместимости: принимаем crowd_tasks_data при создании
+    crowd_tasks_data = serializers.ListField(
+        child=serializers.DictField(),
+        write_only=True,
+        required=False,
+        help_text='List of crowd tasks: [{"text": "comment text", "sent": false}]'
+    )
 
     class Meta:
         model = Task
@@ -91,28 +123,91 @@ class TaskSerializer(serializers.ModelSerializer):
             'has_review',
         ]
 
-    def validate_meaningful_comments(self, value):
+    def validate_crowd_tasks_data(self, value):
+        """Валидация данных для CrowdTask"""
         if value is None:
             return value
         if not isinstance(value, list):
-            raise serializers.ValidationError('Must be a JSON array of comments')
+            raise serializers.ValidationError('Must be a list of crowd tasks')
         for item in value:
             if not isinstance(item, dict):
-                raise serializers.ValidationError('Each item must be an object {id, text, sent}')
-            if 'id' not in item or 'text' not in item or 'sent' not in item:
-                raise serializers.ValidationError('Each comment must have id, text and sent fields')
-            if not isinstance(item['sent'], bool):
-                raise serializers.ValidationError('Field "sent" must be boolean')
-            if not isinstance(item['text'], str) or not item['text']:
+                raise serializers.ValidationError('Each item must be an object with "text" and optional fields')
+            if 'text' not in item:
+                raise serializers.ValidationError('Each crowd task must have "text" field')
+            if not isinstance(item['text'], str) or not item['text'].strip():
                 raise serializers.ValidationError('Field "text" must be non-empty string')
+            if 'sent' in item and not isinstance(item['sent'], bool):
+                raise serializers.ValidationError('Field "sent" must be boolean')
+            if 'url' in item and item['url'] and not isinstance(item['url'], str):
+                raise serializers.ValidationError('Field "url" must be a string')
+            if 'status' in item and item['status'] not in ['SEARCHING', 'IN_PROGRESS', 'PENDING_REVIEW', 'COMPLETED']:
+                raise serializers.ValidationError('Field "status" must be one of: SEARCHING, IN_PROGRESS, PENDING_REVIEW, COMPLETED')
+            if 'confirmed_by_parser' in item and not isinstance(item['confirmed_by_parser'], bool):
+                raise serializers.ValidationError('Field "confirmed_by_parser" must be boolean')
+            if 'confirmed_by_user' in item and not isinstance(item['confirmed_by_user'], bool):
+                raise serializers.ValidationError('Field "confirmed_by_user" must be boolean')
         return value
 
     def create(self, validated_data):
+        # Извлекаем данные для CrowdTask
+        crowd_tasks_data = validated_data.pop('crowd_tasks_data', [])
         # social_network уже установлен в validate, просто удаляем social_network_code
         validated_data.pop('social_network_code', None)
         
         # Создаем Task
-        return super().create(validated_data)
+        task = super().create(validated_data)
+        
+        # Создаем связанные CrowdTask
+        if crowd_tasks_data:
+            for crowd_task_data in crowd_tasks_data:
+                crowd_task = CrowdTask.objects.create(
+                    task=task,
+                    text=crowd_task_data['text'],
+                    url=crowd_task_data.get('url'),
+                    status=crowd_task_data.get('status', 'SEARCHING'),
+                    sent=crowd_task_data.get('sent', False),
+                    confirmed_by_parser=crowd_task_data.get('confirmed_by_parser', False),
+                    parser_log=crowd_task_data.get('parser_log'),
+                    confirmed_by_user=crowd_task_data.get('confirmed_by_user', False),
+                    user_log=crowd_task_data.get('user_log')
+                )
+                # Отправляем нотификацию о создании крауд задания
+                try:
+                    from .views import send_crowd_task_notifications
+                    send_crowd_task_notifications(task, crowd_task)
+                except Exception as e:
+                    logger.error(f"[CrowdTask] Error sending creation notification: {str(e)}", exc_info=True)
+        
+        return task
+    
+    def update(self, instance, validated_data):
+        # Извлекаем данные для CrowdTask
+        crowd_tasks_data = validated_data.pop('crowd_tasks_data', None)
+        # social_network_code удаляем если есть
+        validated_data.pop('social_network_code', None)
+        
+        # Обновляем Task
+        task = super().update(instance, validated_data)
+        
+        # Обновляем CrowdTask если переданы данные
+        if crowd_tasks_data is not None:
+            # Удаляем старые CrowdTask
+            task.crowd_tasks.all().delete()
+            # Создаем новые
+            for crowd_task_data in crowd_tasks_data:
+                CrowdTask.objects.create(
+                    task=task,
+                    text=crowd_task_data['text'],
+                    url=crowd_task_data.get('url'),
+                    status=crowd_task_data.get('status', 'SEARCHING'),
+                    sent=crowd_task_data.get('sent', False),
+                    confirmed_by_parser=crowd_task_data.get('confirmed_by_parser', False),
+                    parser_log=crowd_task_data.get('parser_log'),
+                    confirmed_by_user=crowd_task_data.get('confirmed_by_user', False),
+                    user_log=crowd_task_data.get('user_log')
+                )
+        
+        return task
 
     def validate(self, data):
         social_network_code = data.get('social_network_code')
@@ -120,12 +215,30 @@ class TaskSerializer(serializers.ModelSerializer):
         post_url = data.get('post_url')
         price = data.get('price')
         actions_required = data.get('actions_required')
+        task_type_field = data.get('task_type')
+        crowd_tasks_data = data.get('crowd_tasks_data', [])
 
         if not price:
             raise serializers.ValidationError("Price is required")
-            
-        if not actions_required:
+        
+        # Для Crowd Tasks минимальная цена - 100 points
+        if task_type_field == 'CROWD' and (crowd_tasks_data and len(crowd_tasks_data) > 0):
+            if price < 100:
+                raise serializers.ValidationError("Price for Crowd Tasks must be at least 100 points")
+        
+        # Для Crowd Tasks разрешаем 0 действий, если есть хотя бы один crowd task
+        if actions_required is None:
             raise serializers.ValidationError("Actions required is required")
+        
+        if actions_required < 0:
+            raise serializers.ValidationError("Actions required cannot be negative")
+        
+        # Если это Crowd Task с crowd_tasks_data, разрешаем 0 действий
+        if task_type_field == 'CROWD' and crowd_tasks_data and len(crowd_tasks_data) > 0:
+            # Разрешаем 0 действий для Crowd Tasks
+            pass
+        elif actions_required == 0:
+            raise serializers.ValidationError("Actions required must be greater than 0 for Engagement tasks or tasks without crowd tasks")
 
         try:
             social_network = SocialNetwork.objects.get(code=social_network_code)
@@ -174,17 +287,16 @@ class TaskSerializer(serializers.ModelSerializer):
         
         # Валидация meaningful_comment для типа COMMENT
         meaningful_comment = data.get('meaningful_comment')
-        meaningful_comments = data.get('meaningful_comments')
+        crowd_tasks_data = data.get('crowd_tasks_data', [])
         if task_type == 'COMMENT':
             if meaningful_comment:
-                # meaningful_comments обязателен и список не пуст
-                if not meaningful_comments or not isinstance(meaningful_comments, list) or len(meaningful_comments) == 0:
-                    raise serializers.ValidationError('Meaningful comments list is required and must be a non-empty array when Meaningful comment is enabled')
-                # уже прошли через validate_meaningful_comments при сериализации поля
+                # crowd_tasks_data обязателен и список не пуст
+                if not crowd_tasks_data or not isinstance(crowd_tasks_data, list) or len(crowd_tasks_data) == 0:
+                    raise serializers.ValidationError('Crowd tasks list is required and must be a non-empty array when Meaningful comment is enabled')
         else:
             # для других типов обнулим meaningful-флаги
             data['meaningful_comment'] = False
-            data['meaningful_comments'] = None
+            data['crowd_tasks_data'] = []
 
         return data
 

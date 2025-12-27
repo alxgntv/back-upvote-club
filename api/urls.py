@@ -10,7 +10,7 @@ from .views import (
     create_withdrawal, cancel_withdrawal, update_withdrawal_addresses, 
     task_completion_stats, create_subscription_intent, confirm_subscription,
     get_verified_accounts_count, subscribe_black_friday, get_promo_code_info,
-    tasks1
+    tasks1, get_crowd_tasks
 )
 from .stripe_webhooks import stripe_webhook
 from .views_landings import ActionLandingViewSet
@@ -78,6 +78,14 @@ urlpatterns = [
     path('telegram/webhook/', views.telegram_webhook, name='telegram_webhook'),
     # Median speed API endpoint
     path('median-speed/', MedianSpeedView.as_view(), name='median_speed'),
+    # Crowd task comment verification (legacy - kept for backward compatibility)
+    path('crowd-tasks/<int:crowd_task_id>/verify-comment/', views.verify_crowd_task_comment, name='verify_crowd_task_comment'),
+    # Crowd tasks endpoints
+    path('crowd-tasks/', get_crowd_tasks, name='get_crowd_tasks'),
+    # New separate endpoints for each step
+    path('crowd-tasks/<int:crowd_task_id>/save-comment-url/', views.save_comment_url, name='save_comment_url'),
+    path('crowd-tasks/<int:crowd_task_id>/verify-comment-step2/', views.verify_comment, name='verify_comment'),
+    path('crowd-tasks/<int:crowd_task_id>/confirm-comment/', views.confirm_comment, name='confirm_comment'),
     # Black Friday subscription
     path('subscribe-black-friday/', subscribe_black_friday, name='subscribe_black_friday'),
     # Promo code info

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Task, TaskCompletion, UserProfile, InviteCode, EmailCampaign, EmailSubscriptionType, UserEmailSubscription, SocialNetwork, UserSocialProfile, PostCategory, PostTag, BlogPost, TwitterServiceAccount, ActionType, TwitterUserMapping, PaymentTransaction, TaskReport, ActionLanding, BuyLanding, Landing, Withdrawal, OnboardingProgress, Review, ApiKey
+from .models import Task, TaskCompletion, UserProfile, InviteCode, EmailCampaign, EmailSubscriptionType, UserEmailSubscription, SocialNetwork, UserSocialProfile, PostCategory, PostTag, BlogPost, TwitterServiceAccount, ActionType, TwitterUserMapping, PaymentTransaction, TaskReport, ActionLanding, BuyLanding, Landing, Withdrawal, OnboardingProgress, Review, ApiKey, CrowdTask
 from django.utils import timezone
 import logging
 from django.template import Template, Context
@@ -254,10 +254,127 @@ class TaskCompletionAdmin(admin.ModelAdmin):
 
 admin.site.register(InviteCode)
 
+class CrowdTaskInline(admin.StackedInline):
+    """Inline для управления CrowdTask в админке Task"""
+    model = CrowdTask
+    extra = 1
+    fields = (
+        'text',
+        'url',
+        'status',
+        'sent',
+        'assigned_to',
+        ('confirmed_by_parser', 'parser_log'),
+        ('confirmed_by_user', 'user_log'),
+    )
+    verbose_name = 'Crowd Task'
+    verbose_name_plural = 'Crowd Tasks'
+    can_delete = True
+    show_change_link = True
+    ordering = ['created_at']
+    readonly_fields = ('created_at', 'updated_at')
+    raw_id_fields = ('assigned_to',)
+
+@admin.register(CrowdTask)
+class CrowdTaskAdmin(admin.ModelAdmin):
+    list_display = (
+        'id',
+        'task',
+        'text_preview',
+        'url_preview',
+        'status',
+        'sent',
+        'confirmed_by_parser',
+        'confirmed_by_user',
+        'assigned_to_firebase_id',
+        'created_at',
+        'updated_at'
+    )
+    list_filter = (
+        'status',
+        'sent',
+        'confirmed_by_parser',
+        'confirmed_by_user',
+        'assigned_to',
+        'created_at',
+        'task__type',
+        'task__social_network'
+    )
+    search_fields = (
+        'text',
+        'url',
+        'parser_log',
+        'user_log',
+        'task__id',
+        'task__post_url',
+        'assigned_to__username'
+    )
+    readonly_fields = (
+        'created_at',
+        'updated_at',
+        'assigned_to_firebase_id'
+    )
+    raw_id_fields = ('task', 'assigned_to')
+    
+    fieldsets = (
+        ('Basic Information', {
+            'fields': (
+                'task',
+                'text',
+                'url',
+                'status',
+                'sent',
+            )
+        }),
+        ('Assignment', {
+            'fields': (
+                'assigned_to',
+                'assigned_to_firebase_id',
+            )
+        }),
+        ('Verification', {
+            'fields': (
+                'confirmed_by_parser',
+                'parser_log',
+                'confirmed_by_user',
+                'user_log',
+            )
+        }),
+        ('Timestamps', {
+            'fields': (
+                'created_at',
+                'updated_at'
+            )
+        })
+    )
+    
+    def text_preview(self, obj):
+        """Показывает превью текста комментария"""
+        if obj.text:
+            preview = obj.text[:100] + '...' if len(obj.text) > 100 else obj.text
+            return preview
+        return '-'
+    text_preview.short_description = 'Comment Text'
+    
+    def url_preview(self, obj):
+        """Показывает превью URL"""
+        if obj.url:
+            preview = obj.url[:50] + '...' if len(obj.url) > 50 else obj.url
+            return format_html('<a href="{}" target="_blank">{}</a>', obj.url, preview)
+        return '-'
+    url_preview.short_description = 'URL'
+    
+    def assigned_to_firebase_id(self, obj):
+        """Показывает Firebase ID пользователя, который перевел задание в PENDING_REVIEW"""
+        if obj.assigned_to:
+            return obj.assigned_to.username  # username в Django User = Firebase UID
+        return '-'
+    assigned_to_firebase_id.short_description = 'Assigned To (Firebase ID)'
+
 @admin.register(Task)
 class TaskAdmin(admin.ModelAdmin):
     list_display = (
-        'id', 'type', 'social_network', 'post_url', 'original_price', 'price', 
+        'id', 'type', 'task_type', 'social_network', 'post_url', 'original_price', 'price', 
         'actions_required', 'actions_completed', 'bonus_actions', 'bonus_actions_completed', 'status', 'creator', 
         'created_at', 'completion_info', 
         'completion_duration_display', 'email_status_display',
@@ -268,6 +385,7 @@ class TaskAdmin(admin.ModelAdmin):
     list_filter = (
         'status', 
         'type',
+        'task_type',
         'social_network',
         'created_at',
         'email_sent',
@@ -293,6 +411,7 @@ class TaskAdmin(admin.ModelAdmin):
         ('Basic Information', {
             'fields': (
                 'type',
+                'task_type',
                 'social_network',
                 'post_url',
                 'target_user_id',
@@ -307,7 +426,6 @@ class TaskAdmin(admin.ModelAdmin):
                 'bonus_actions_completed',
                 'longview',
                 'meaningful_comment',
-                'meaningful_comments',
                 'completion_percentage',
                 'is_pinned'  # добавляем галочку в основной блок
             )
@@ -323,17 +441,23 @@ class TaskAdmin(admin.ModelAdmin):
 
     def get_fields(self, request, obj=None):
         fields = super().get_fields(request, obj)
-        # Условное отображение полей meaningful_* только для COMMENT
+        # Условное отображение поля meaningful_comment только для COMMENT
         if obj and obj.type != 'COMMENT':
             try:
                 fields = list(fields)
                 if 'meaningful_comment' in fields:
                     fields.remove('meaningful_comment')
-                if 'meaningful_comments' in fields:
-                    fields.remove('meaningful_comments')
             except Exception:
                 pass
         return fields
+    
+    inlines = [CrowdTaskInline]
+    
+    def get_inline_instances(self, request, obj=None):
+        """Показываем inline для всех заданий, но редактирование доступно только для COMMENT"""
+        inlines = super().get_inline_instances(request, obj)
+        # Показываем inline для всех заданий, чтобы видеть привязанные Crowd Tasks
+        return inlines
 
     def completion_percentage(self, obj):
         total_required = (obj.actions_required or 0) + (obj.bonus_actions or 0)

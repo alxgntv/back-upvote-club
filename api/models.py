@@ -373,6 +373,17 @@ class Task(models.Model):
         ('INSTALL', 'Install'),
         ('SHARE', 'Share'),
     ])
+    task_type = models.CharField(
+        max_length=20,
+        choices=[
+            ('ENGAGEMENT', 'Engagement'),
+            ('CROWD', 'Crowd'),
+        ],
+        null=True,
+        blank=True,
+        verbose_name='Task Type',
+        help_text='Type of task: Engagement or Crowd'
+    )
     post_url = models.URLField(max_length=1000)
     price = models.IntegerField()
     actions_required = models.IntegerField()
@@ -432,6 +443,7 @@ class Task(models.Model):
             models.Index(fields=['status']),
             models.Index(fields=['social_network', 'type']),
             models.Index(fields=['post_url']),
+            models.Index(fields=['task_type']),
         ]
 
     def complete(self):
@@ -465,6 +477,106 @@ class Task(models.Model):
             self.is_pinned = True
 
         super().save(*args, **kwargs)
+
+class CrowdTask(models.Model):
+    """
+    Модель для комментариев, привязанных к заданию.
+    Используется для задач типа COMMENT с meaningful_comment=True.
+    """
+    STATUS_CHOICES = [
+        ('SEARCHING', 'Searching'),
+        ('IN_PROGRESS', 'In Progress'),
+        ('PENDING_REVIEW', 'Pending Review'),
+        ('COMPLETED', 'Completed'),
+    ]
+    
+    task = models.ForeignKey(
+        'Task',
+        on_delete=models.CASCADE,
+        related_name='crowd_tasks',
+        verbose_name='Task',
+        help_text='Task this comment belongs to'
+    )
+    text = models.TextField(
+        verbose_name='Comment Text',
+        help_text='Text of the comment'
+    )
+    url = models.URLField(
+        max_length=1000,
+        null=True,
+        blank=True,
+        verbose_name='URL',
+        help_text='URL to verify task completion'
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='SEARCHING',
+        verbose_name='Status',
+        help_text='Status of the crowd task'
+    )
+    sent = models.BooleanField(
+        default=False,
+        verbose_name='Sent',
+        help_text='Whether this comment has been used/sent'
+    )
+    confirmed_by_parser = models.BooleanField(
+        default=False,
+        verbose_name='Confirmed by Parser',
+        help_text='Whether this task was confirmed by parser'
+    )
+    parser_log = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name='Parser Log',
+        help_text='Log message from parser verification'
+    )
+    confirmed_by_user = models.BooleanField(
+        default=False,
+        verbose_name='Confirmed by User',
+        help_text='Whether this task was confirmed by user'
+    )
+    user_log = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name='User Log',
+        help_text='Log message from user verification'
+    )
+    assigned_to = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='assigned_crowd_tasks',
+        verbose_name='Assigned To',
+        help_text='User who assigned this task to PENDING_REVIEW status'
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Created At'
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name='Updated At'
+    )
+
+    class Meta:
+        verbose_name = 'Crowd Task'
+        verbose_name_plural = 'Crowd Tasks'
+        ordering = ['created_at']
+        indexes = [
+            models.Index(fields=['task', 'sent']),
+            models.Index(fields=['task', 'status']),
+            models.Index(fields=['created_at']),
+            models.Index(fields=['confirmed_by_parser']),
+            models.Index(fields=['confirmed_by_user']),
+            models.Index(fields=['assigned_to', 'status']),
+        ]
+
+    def __str__(self):
+        task_id = self.task.id if self.task else 'N/A'
+        text_preview = self.text[:50] + '...' if len(self.text) > 50 else self.text
+        return f"CrowdTask for Task #{task_id}: {text_preview}"
 
 class TaskCompletion(models.Model):
     created_at = models.DateTimeField(default=timezone.now)
