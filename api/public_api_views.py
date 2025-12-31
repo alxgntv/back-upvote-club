@@ -471,7 +471,13 @@ def create_task_via_api(request):
             
             logger.info(f"[public_api] Task created successfully via API: task_id={task.id}, user_id={user.id}")
             
-            return Response({
+            # Получаем crowd_tasks если они есть
+            crowd_tasks_data = []
+            if task.task_type == 'CROWD' and task.crowd_tasks.exists():
+                from .serializers import CrowdTaskSerializer
+                crowd_tasks_data = CrowdTaskSerializer(task.crowd_tasks.all(), many=True).data
+            
+            response_data = {
                 'success': True,
                 'task_id': task.id,
                 'message': 'Task created successfully',
@@ -480,6 +486,7 @@ def create_task_via_api(request):
                     'status': task.status,
                     'post_url': task.post_url,
                     'type': task.type,
+                    'task_type': task.task_type,
                     'social_network_code': social_network_code,
                     'actions_required': task.actions_required,
                     'actions_completed': task.actions_completed,
@@ -489,7 +496,13 @@ def create_task_via_api(request):
                     'original_price': task.original_price,
                     'created_at': task.created_at
                 }
-            }, status=status.HTTP_201_CREATED)
+            }
+            
+            # Добавляем crowd_tasks в ответ, если они есть
+            if crowd_tasks_data:
+                response_data['task']['crowd_tasks'] = crowd_tasks_data
+            
+            return Response(response_data, status=status.HTTP_201_CREATED)
             
     except ValidationError as e:
         logger.error(f"[public_api] Validation error creating task: {str(e)}")

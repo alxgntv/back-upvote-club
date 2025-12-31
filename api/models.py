@@ -1190,22 +1190,14 @@ class ActionLanding(models.Model):
         blank=True
     )
 
-    # Дополнительные SEO поля
-    page_type = models.CharField(
-        max_length=50,
-        verbose_name='Page Type',
-        help_text='Type of the landing page',
-        null=True,
-        blank=True
-    )
-    page_blocks = models.TextField(
-        verbose_name='Page Blocks',
-        help_text='Main blocks/sections of the page',
-        null=True,
-        blank=True
-    )
-
     # FAQ в формате JSON
+    faq_section_title = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        verbose_name='FAQ Section Title',
+        help_text='Title for FAQ section'
+    )
     faq = models.JSONField(
         verbose_name='FAQ',
         help_text='List of Q&A items, e.g. [{"q": "Question", "a": "Answer"}]',
@@ -1217,12 +1209,6 @@ class ActionLanding(models.Model):
     short_description = models.TextField(
         verbose_name='Short Description',
         help_text='Brief description for meta tags and previews',
-        null=True,
-        blank=True
-    )
-    long_description = models.TextField(
-        verbose_name='Long Description',
-        help_text='Full content of the landing page',
         null=True,
         blank=True
     )
@@ -1253,6 +1239,50 @@ class ActionLanding(models.Model):
         blank=True,
         verbose_name='Indexing Error',
         help_text='Error message if indexing failed'
+    )
+
+    # Связь с отзывами
+    reviews_section_title = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        verbose_name='Reviews Section Title',
+        help_text='Title for Reviews section'
+    )
+    reviews = models.ManyToManyField(
+        'Review',
+        blank=True,
+        verbose_name='Reviews',
+        help_text='Select reviews to display on this landing page',
+        related_name='action_landings'
+    )
+
+    # JSON поля для контента
+    how_it_works_title = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        verbose_name='How It Works Title',
+        help_text='Title for "How It Works" section'
+    )
+    how_it_works = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name='How It Works',
+        help_text='JSON structure: [{"title": "Step Title", "text": "Step description text", "image": "image_url"}]'
+    )
+    why_upvote_club_best_title = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        verbose_name='Why Upvote Club Best Title',
+        help_text='Title for "Why Upvote Club Best" section'
+    )
+    why_upvote_club_best = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name='Why Upvote Club Best',
+        help_text='JSON structure: [{"title": "Feature title", "text": "Feature description", "image": "image_url"}]'
     )
 
     # Служебные поля
@@ -1554,7 +1584,9 @@ class Review(models.Model):
         ]
 
     def __str__(self):
-        return f"Review by {self.user.username} for task {self.task_id} ({self.rating}★)"
+        social_network_name = self.social_network.name if self.social_network else 'Unknown'
+        action_name = self.action.name if self.action else 'Unknown'
+        return f"Review by {self.user.username} - {social_network_name} {action_name} ({self.rating}★)"
 
 class ApiKey(models.Model):
     """

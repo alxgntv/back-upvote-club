@@ -18,7 +18,8 @@ This document describes how to work with Crowd Tasks (comments) through the Upvo
 ### 2. Create Task via Public API
 **Endpoint:** `POST /api/public-api/create-task/`  
 **Authentication:** API Key (via `X-API-Key` header or `api_key` parameter)  
-**Content-Type:** `application/json`
+**Content-Type:** `application/json`  
+**Description:** Creates a task via Public API using API Key authentication. Supports both Engagement tasks and Crowd Tasks. For Crowd Tasks, use `task_type: "CROWD"` with `crowd_tasks_data` array (only for Reddit and Quora).
 
 ### 3. Get Crowd Tasks
 **Endpoint:** `GET /api/crowd-tasks/`  
@@ -289,6 +290,64 @@ Content-Type: application/json
 }
 ```
 
+### Example 8: Public API - Quora Task with Crowd Tasks
+
+```json
+POST /api/public-api/create-task/
+X-API-Key: <your_api_key>
+Content-Type: application/json
+
+{
+  "post_url": "https://www.quora.com/What-is-the-best-way-to-learn-programming",
+  "type": "COMMENT",
+  "price": 100,
+  "actions_required": 50,
+  "social_network_code": "QUORA",
+  "task_type": "CROWD",
+  "crowd_tasks_data": [
+    {
+      "text": "Great question! I recommend starting with Python.",
+      "url": "https://www.quora.com/What-is-the-best-way-to-learn-programming",
+      "status": "SEARCHING",
+      "sent": false
+    }
+  ]
+}
+```
+
+### Example 9: Public API - Task with 0 Actions and Single Crowd Task (Reddit)
+
+**Note:** You can create a task with 0 actions (`actions_required: 0`) via Public API if it has at least one Crowd Task. This is useful when you only need to track a comment without requiring any actions.
+
+```json
+POST /api/public-api/create-task/
+X-API-Key: <your_api_key>
+Content-Type: application/json
+
+{
+  "post_url": "https://www.reddit.com/r/programming/comments/abc123/my_awesome_post/",
+  "type": "COMMENT",
+  "price": 100,
+  "actions_required": 0,
+  "social_network_code": "REDDIT",
+  "task_type": "CROWD",
+  "crowd_tasks_data": [
+    {
+      "text": "Great post! Thanks for sharing.",
+      "url": "https://www.reddit.com/r/programming/comments/abc123/my_awesome_post/",
+      "status": "SEARCHING",
+      "sent": false
+    }
+  ]
+}
+```
+
+**Important:** 
+- When `actions_required` is 0, the task cost will be 0 (no balance deduction)
+- You must provide at least one Crowd Task in `crowd_tasks_data`
+- This only works for `task_type: "CROWD"` with Reddit or Quora
+- Minimum price for Crowd Tasks is still 100 points (even with 0 actions)
+
 ---
 
 ## Response Structure
@@ -337,6 +396,52 @@ Content-Type: application/json
 }
 ```
 
+### Success Response from Public API (201 Created)
+
+When creating a task via Public API (`/api/public-api/create-task/`), the response includes additional fields:
+
+```json
+{
+  "success": true,
+  "task_id": 12345,
+  "message": "Task created successfully",
+  "task": {
+    "id": 12345,
+    "status": "ACTIVE",
+    "post_url": "https://www.reddit.com/r/programming/comments/abc123/my_awesome_post/",
+    "type": "COMMENT",
+    "task_type": "CROWD",
+    "social_network_code": "REDDIT",
+    "actions_required": 50,
+    "actions_completed": 0,
+    "bonus_actions": 0,
+    "bonus_actions_completed": 0,
+    "price": 100,
+    "original_price": 5000,
+    "created_at": "2025-12-26T10:00:00Z",
+    "crowd_tasks": [
+      {
+        "id": 1,
+        "text": "Amazing content!",
+        "url": "https://www.reddit.com/r/programming/comments/abc123/my_awesome_post/",
+        "status": "SEARCHING",
+        "sent": false,
+        "confirmed_by_parser": false,
+        "parser_log": null,
+        "confirmed_by_user": false,
+        "user_log": null,
+        "assigned_to_id": null,
+        "assigned_to_username": null,
+        "created_at": "2025-12-26T10:00:00Z",
+        "updated_at": "2025-12-26T10:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+**Note:** The `crowd_tasks` field is only included in the response when `task_type: "CROWD"` and `crowd_tasks_data` was provided in the request.
+
 ### Error Response (400 Bad Request)
 
 ```json
@@ -350,6 +455,37 @@ Or for validation errors:
 ```json
 {
   "detail": "crowd_tasks_data: Each crowd task must have \"text\" field"
+}
+```
+
+### Error Response from Public API (400 Bad Request)
+
+When creating a task via Public API, error responses have a different format:
+
+```json
+{
+  "success": false,
+  "error": "Missing required fields: post_url, type"
+}
+```
+
+Or for validation errors:
+
+```json
+{
+  "success": false,
+  "error": "crowd_tasks_data: Each crowd task must have \"text\" field"
+}
+```
+
+Or for insufficient balance:
+
+```json
+{
+  "success": false,
+  "error": "Insufficient balance to create task",
+  "required_balance": 5000,
+  "current_balance": 1000
 }
 ```
 
@@ -620,6 +756,143 @@ createTaskWithCrowdTasks(taskData)
   .catch(error => console.error('Error:', error));
 ```
 
+### Public API Example (Using API Key)
+
+```typescript
+interface PublicApiResponse {
+  success: boolean;
+  task_id: number;
+  message: string;
+  task: {
+    id: number;
+    status: string;
+    post_url: string;
+    type: string;
+    task_type: string;
+    social_network_code: string;
+    actions_required: number;
+    actions_completed: number;
+    bonus_actions: number;
+    bonus_actions_completed: number;
+    price: number;
+    original_price: number;
+    created_at: string;
+    crowd_tasks?: CrowdTaskData[];
+  };
+}
+
+async function createTaskViaPublicAPI(
+  apiKey: string,
+  taskData: CreateTaskRequest
+): Promise<PublicApiResponse> {
+  const response = await fetch('/api/public-api/create-task/', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': apiKey
+    },
+    body: JSON.stringify(taskData)
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to create task via Public API');
+  }
+
+  return await response.json();
+}
+
+// Usage - Reddit Example with Public API
+const apiKey = 'your_api_key_here';
+const taskData: CreateTaskRequest = {
+  post_url: 'https://www.reddit.com/r/programming/comments/abc123/my_awesome_post/',
+  type: 'COMMENT',
+  price: 100,
+  actions_required: 50,
+  social_network_code: 'REDDIT',
+  task_type: 'CROWD',
+  crowd_tasks_data: [
+    {
+      text: 'Amazing content!',
+      url: 'https://www.reddit.com/r/programming/comments/abc123/my_awesome_post/',
+      status: 'SEARCHING',
+      sent: false
+    }
+  ]
+};
+
+try {
+  const result = await createTaskViaPublicAPI(apiKey, taskData);
+  console.log('Task created via Public API:', result);
+  console.log('Task ID:', result.task_id);
+  console.log('Crowd Tasks:', result.task.crowd_tasks);
+} catch (error) {
+  console.error('Error creating task via Public API:', error);
+}
+```
+
+### Public API Example with Axios
+
+```typescript
+import axios from 'axios';
+
+const publicApi = axios.create({
+  baseURL: '/api/public-api',
+  headers: {
+    'Content-Type': 'application/json'
+  }
+});
+
+// Add API key interceptor
+publicApi.interceptors.request.use((config) => {
+  const apiKey = localStorage.getItem('api_key');
+  if (apiKey) {
+    config.headers['X-API-Key'] = apiKey;
+  }
+  return config;
+});
+
+// Create task via Public API
+async function createTaskViaPublicAPI(taskData: CreateTaskRequest): Promise<PublicApiResponse> {
+  try {
+    const response = await publicApi.post('/create-task/', taskData);
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      throw new Error(error.response?.data?.error || 'Failed to create task via Public API');
+    }
+    throw error;
+  }
+}
+
+// Usage - Quora Example with Public API
+const taskData: CreateTaskRequest = {
+  post_url: 'https://www.quora.com/What-is-the-best-way-to-learn-programming',
+  type: 'COMMENT',
+  price: 100,
+  actions_required: 50,
+  social_network_code: 'QUORA',
+  task_type: 'CROWD',
+  crowd_tasks_data: [
+    {
+      text: 'Great question! I recommend starting with Python.',
+      url: 'https://www.quora.com/What-is-the-best-way-to-learn-programming',
+      status: 'SEARCHING',
+      sent: false
+    }
+  ]
+};
+
+createTaskViaPublicAPI(taskData)
+  .then(result => {
+    console.log('Task created via Public API:', result);
+    if (result.success && result.task.crowd_tasks) {
+      console.log('Crowd tasks created:', result.task.crowd_tasks.length);
+    }
+  })
+  .catch(error => console.error('Error:', error));
+```
+
 ---
 
 ## Updating Tasks with Crowd Tasks
@@ -656,6 +929,9 @@ Content-Type: application/json
 5. **Monitor task status** - regularly check task status and crowd task statuses
 6. **Batch operations** - when creating multiple crowd tasks, include them all in a single request
 7. **Social network compatibility** - Crowd Tasks are only supported for Reddit (`REDDIT`) and Quora (`QUORA`). For other social networks, use `task_type: "ENGAGEMENT"` without `crowd_tasks_data`
+8. **Public API support** - Crowd Tasks can be created via Public API (`/api/public-api/create-task/`) using API Key authentication. Use `X-API-Key` header or `api_key` parameter for authentication
+9. **API Key security** - Store API keys securely and never expose them in client-side code or public repositories
+10. **Response format** - Public API responses include `success`, `task_id`, `message`, and `task` fields. The `crowd_tasks` array is included in the `task` object when Crowd Tasks are created
 
 ---
 

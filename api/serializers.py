@@ -612,8 +612,33 @@ class SocialNetworkWithActionsSerializer(serializers.ModelSerializer):
         model = SocialNetwork
         fields = ['id', 'name', 'code', 'available_actions']
 
+class ReviewBasicSerializer(serializers.ModelSerializer):
+    """Базовый сериализатор для Review в ActionLanding"""
+    social_network_name = serializers.CharField(source='social_network.name', read_only=True)
+    action_name = serializers.CharField(source='action.name', read_only=True)
+    
+    class Meta:
+        model = Review
+        fields = [
+            'id',
+            'user',
+            'social_network',
+            'social_network_name',
+            'action',
+            'action_name',
+            'actions_count',
+            'task',
+            'rating',
+            'comment',
+            'created_at',
+            'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
 class ActionLandingSerializer(serializers.ModelSerializer):
     full_slug = serializers.SerializerMethodField()
+    reviews = ReviewBasicSerializer(many=True, read_only=True)
+    social_network = SocialNetworkSerializer(read_only=True)
 
     class Meta:
         model = ActionLanding

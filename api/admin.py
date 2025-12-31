@@ -2516,20 +2516,35 @@ class ActionLandingAdmin(admin.ModelAdmin):
         'has_h1',
         'has_content',
         'has_short_description',
-        'has_long_description',
         'has_faq',
-        'has_page_type',
-        'has_page_blocks'
+        'has_how_it_works',
+        'has_why_upvote_club_best'
     )
-    search_fields = ('title', 'slug', 'short_description', 'long_description')
+    search_fields = ('title', 'slug', 'short_description')
     list_filter = ('social_network', 'action', 'is_indexed')
     readonly_fields = ('created_at', 'updated_at', 'indexed_at')
+    filter_horizontal = ('reviews',)
     fieldsets = (
         (None, {
-            'fields': ('title', 'slug', 'social_network', 'action', 'short_description', 'long_description', 'redirect_url')
+            'fields': ('title', 'slug', 'social_network', 'action', 'redirect_url')
+        }),
+        ('Hero Landing', {
+            'fields': ('h1', 'short_description', 'content')
         }),
         ('SEO', {
-            'fields': ('meta_title', 'meta_description', 'h1', 'content', 'page_type', 'page_blocks', 'faq')
+            'fields': ('meta_title', 'meta_description')
+        }),
+        ('Why Upvote Club Best', {
+            'fields': ('why_upvote_club_best_title', 'why_upvote_club_best')
+        }),
+        ('How It Works', {
+            'fields': ('how_it_works_title', 'how_it_works')
+        }),
+        ('Reviews', {
+            'fields': ('reviews_section_title', 'reviews')
+        }),
+        ('FAQ', {
+            'fields': ('faq_section_title', 'faq')
         }),
         ('Indexing', {
             'fields': ('is_indexed', 'indexed_at', 'indexing_error')
@@ -2566,25 +2581,54 @@ class ActionLandingAdmin(admin.ModelAdmin):
         return format_html('✓' if obj.short_description else '✗')
     has_short_description.short_description = 'Short Desc'
 
-    def has_long_description(self, obj):
-        """Проверяет заполненность long_description"""
-        return format_html('✓' if obj.long_description else '✗')
-    has_long_description.short_description = 'Long Desc'
-
     def has_faq(self, obj):
         """Проверяет заполненность faq"""
         return format_html('✓' if obj.faq else '✗')
     has_faq.short_description = 'FAQ'
 
-    def has_page_type(self, obj):
-        """Проверяет заполненность page_type"""
-        return format_html('✓' if obj.page_type else '✗')
-    has_page_type.short_description = 'Page Type'
+    def has_how_it_works(self, obj):
+        """Проверяет заполненность how_it_works"""
+        return format_html('✓' if obj.how_it_works else '✗')
+    has_how_it_works.short_description = 'How It Works'
 
-    def has_page_blocks(self, obj):
-        """Проверяет заполненность page_blocks"""
-        return format_html('✓' if obj.page_blocks else '✗')
-    has_page_blocks.short_description = 'Page Blocks'
+    def has_why_upvote_club_best(self, obj):
+        """Проверяет заполненность why_upvote_club_best"""
+        return format_html('✓' if obj.why_upvote_club_best else '✗')
+    has_why_upvote_club_best.short_description = 'Why Best'
+
+    def formfield_for_manytomany(self, db_field, request, **kwargs):
+        """Фильтрует отзывы по социальной сети лендинга"""
+        if db_field.name == "reviews":
+            # Получаем текущий объект из request (если редактируем)
+            obj_id = request.resolver_match.kwargs.get('object_id')
+            social_network_id = None
+            
+            if obj_id:
+                try:
+                    landing = ActionLanding.objects.get(pk=obj_id)
+                    if landing.social_network:
+                        social_network_id = landing.social_network.id
+                except ActionLanding.DoesNotExist:
+                    pass
+            
+            # Проверяем данные из POST запроса (при создании/редактировании)
+            if request.method == 'POST' and not social_network_id:
+                social_network_id = request.POST.get('social_network')
+                if social_network_id:
+                    try:
+                        social_network_id = int(social_network_id)
+                    except (ValueError, TypeError):
+                        social_network_id = None
+            
+            if social_network_id:
+                # Фильтруем отзывы только по этой социальной сети
+                kwargs["queryset"] = Review.objects.filter(
+                    social_network_id=social_network_id
+                ).select_related('user', 'social_network', 'action', 'task').order_by('-created_at')
+            else:
+                # Если социальная сеть не выбрана, показываем все отзывы
+                kwargs["queryset"] = Review.objects.all().select_related('user', 'social_network', 'action', 'task').order_by('-created_at')
+        return super().formfield_for_manytomany(db_field, request, **kwargs)
 
     def get_urls(self):
         urls = super().get_urls()
@@ -2621,7 +2665,7 @@ class ActionLandingAdmin(admin.ModelAdmin):
                 available_fields = [
                     'title', 'slug', 'social_network', 'action',
                     'meta_title', 'meta_description', 'h1', 'content',
-                    'page_type', 'page_blocks', 'short_description', 'long_description',
+                    'short_description',
                     'redirect_url', 'faq'
                 ]
                 
@@ -3006,14 +3050,21 @@ class OnboardingProgressAdmin(admin.ModelAdmin):
 @admin.register(Review)
 class ReviewAdmin(admin.ModelAdmin):
     list_display = [
-        'id', 'user', 'social_network', 'action', 'actions_count', 'task', 'rating',
-        'get_user_country',
-        'comment', 'created_at', 'updated_at'
+        'id', 'user', 'social_network', 'action', 'actions_count', 'task', 
+        'get_rating_display', 'comment', 'get_user_country',
+        'created_at', 'updated_at'
     ]
     list_filter = ['social_network', 'action', 'rating', 'created_at']
     search_fields = ['user__username', 'task__id', 'comment']
     readonly_fields = ['created_at', 'updated_at']
 
+    def get_rating_display(self, obj):
+        """Отображает рейтинг в виде звезд"""
+        stars = '★' * obj.rating + '☆' * (5 - obj.rating)
+        return format_html('<span style="color: gold;">{}</span> ({})', stars, obj.rating)
+    get_rating_display.short_description = 'Rating'
+    get_rating_display.admin_order_field = 'rating'
+    
     def get_user_country(self, obj):
         try:
             country = getattr(getattr(obj.user, 'userprofile', None), 'chosen_country', None)
