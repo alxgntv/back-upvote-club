@@ -1584,9 +1584,10 @@ class Review(models.Model):
         ]
 
     def __str__(self):
-        social_network_name = self.social_network.name if self.social_network else 'Unknown'
         action_name = self.action.name if self.action else 'Unknown'
-        return f"Review by {self.user.username} - {social_network_name} {action_name} ({self.rating}★)"
+        comment_text = (self.comment or '').strip()
+        base = f"{action_name} ({self.rating}★)"
+        return f"{base} - {comment_text}" if comment_text else base
 
 class ApiKey(models.Model):
     """
