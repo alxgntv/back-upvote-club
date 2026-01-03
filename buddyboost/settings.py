@@ -222,7 +222,6 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ORIGIN_WHITELIST = [
     'http://localhost:3000',
     'https://localhost:3000',
-    "https://5380-64-176-193-154.ngrok-free.app",
     "https://frontend-upvote-c-git-c3f4d9-serviceintheroomgmailcoms-projects.vercel.app",
     "https://frontend-upvote-club-6loqur3hg.vercel.app/",
     "https://upvote.club",
@@ -231,7 +230,6 @@ CORS_ORIGIN_WHITELIST = [
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:3000',
     'https://localhost:3000',
-    "https://5380-64-176-193-154.ngrok-free.app",
     "https://frontend-upvote-c-git-c3f4d9-serviceintheroomgmailcoms-projects.vercel.app",
     "https://frontend-upvote-club-6loqur3hg.vercel.app",
     "https://upvote.club",
