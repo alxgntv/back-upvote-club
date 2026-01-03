@@ -1,5 +1,6 @@
 from django.core.management.base import BaseCommand
 from api.models import UserProfile
+from api.constants import BONUS_ACTION_COUNTRIES
 import logging
 
 logger = logging.getLogger(__name__)
@@ -22,11 +23,11 @@ class Command(BaseCommand):
 
                 # Определяем дневной лимит в зависимости от статуса
                 if profile.status == 'FREE':
-                    # Для FREE пользователей: 1 задание в день, если страна выбрана
-                    if profile.chosen_country:
+                    # Для FREE пользователей: 1 задание в день только для стран из списка
+                    if profile.chosen_country and profile.chosen_country in BONUS_ACTION_COUNTRIES:
                         daily_limit = 1
                     else:
-                        daily_limit = 0  # Если страна не выбрана
+                        daily_limit = 0  # Если страна не выбрана или не в списке
                 elif profile.status == 'MEMBER':
                     daily_limit = 1
                 elif profile.status == 'BUDDY':

@@ -15,7 +15,7 @@ from .views import (
 from .stripe_webhooks import stripe_webhook
 from .views_landings import ActionLandingViewSet
 from .views_median_speed import MedianSpeedView
-from .public_api_views import generate_api_key, create_task_via_api, get_task_status, list_api_keys
+from .public_api_views import generate_api_key, create_task_via_api, get_task_status, list_api_keys, create_crowd_task_via_api
 
 router = DefaultRouter()
 router.register(r'profile', views.UserProfileViewSet)
@@ -94,6 +94,7 @@ urlpatterns = [
     path('public-api/generate-key/', generate_api_key, name='generate_api_key'),
     path('public-api/list-keys/', list_api_keys, name='list_api_keys'),
     path('public-api/create-task/', create_task_via_api, name='create_task_via_api'),
+    path('public-api/create-crowd-task/', create_crowd_task_via_api, name='create_crowd_task_via_api'),
     path('public-api/task-status/<int:task_id>/', get_task_status, name='get_task_status'),
     path('public-api/task-status/', get_task_status, name='get_task_status_list'),
 ]

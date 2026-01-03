@@ -21,6 +21,12 @@ This document describes how to work with Crowd Tasks (comments) through the Upvo
 **Content-Type:** `application/json`  
 **Description:** Creates a task via Public API using API Key authentication. Supports both Engagement tasks and Crowd Tasks. For Crowd Tasks, use `task_type: "CROWD"` with `crowd_tasks_data` array (only for Reddit and Quora).
 
+### 2.a. Create Crowd Task via Public API (shortcut)
+**Endpoint:** `POST /api/public-api/create-crowd-task/`  
+**Authentication:** API Key (via `X-API-Key` header or `api_key` parameter)  
+**Content-Type:** `application/json`  
+**Description:** Creates a Crowd Task with a simplified payload. Forces `task_type: "CROWD"` and `type: "COMMENT"`, requires `crowd_tasks_data`. Actions count defaults to crowd_tasks length if not provided or ≤0. Price must meet Crowd minimum rules.
+
 ### 3. Get Crowd Tasks
 **Endpoint:** `GET /api/crowd-tasks/`  
 **Authentication:** Required (JWT Token)  
@@ -313,6 +319,45 @@ Content-Type: application/json
     }
   ]
 }
+```
+
+### Example 9: Public API - Create Crowd Task (Shortcut)
+
+```json
+POST /api/public-api/create-crowd-task/
+X-API-Key: <your_api_key>
+Content-Type: application/json
+
+{
+  "post_url": "https://www.reddit.com/r/programming/comments/abc123/my_awesome_post/",
+  "price": 120,
+  "social_network_code": "REDDIT",
+  "crowd_tasks_data": [
+    { "text": "Great post!" },
+    { "text": "Love this thread" }
+  ],
+  "actions_required": 2,
+  "is_pinned": false
+}
+```
+
+### Example 10: Postman/Curl Ready (Create Crowd Task via Public API)
+
+```
+curl -X POST https://upvote.club/api/public-api/create-crowd-task/ \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: <your_api_key>" \
+  -d '{
+    "post_url": "https://www.reddit.com/r/programming/comments/abc123/my_awesome_post/",
+    "price": 120,
+    "social_network_code": "REDDIT",
+    "crowd_tasks_data": [
+      { "text": "Great post!" },
+      { "text": "Love this thread" }
+    ],
+    "actions_required": 2,
+    "is_pinned": false
+  }'
 ```
 
 ### Example 9: Public API - Task with 0 Actions and Single Crowd Task (Reddit)

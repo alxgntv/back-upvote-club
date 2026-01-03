@@ -15,7 +15,7 @@ from .models import (
     UserProfile, 
     SocialNetwork
 )
-from .serializers import TaskSerializer
+from .serializers import TaskSerializer, CrowdTaskSerializer
 from .utils.email_utils import send_task_created_email
 from .constants import BONUS_ACTION_COUNTRIES, BONUS_ACTION_RATE
 import logging
@@ -519,6 +519,282 @@ def create_task_via_api(request):
             {
                 'success': False,
                 'error': 'Error creating task. Please try again later.'
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def create_crowd_task_via_api(request):
+    """
+    Создает crowd-задачу через публичный API по API-ключу.
+    Требуется X-API-Key или параметр api_key.
+    Поддерживает только задачи типа COMMENT, автоматически проставляет task_type=CROWD.
+    """
+    logger.info("[public_api] create_crowd_task_via_api called")
+
+    api_key_str = _get_api_key_from_request(request)
+    api_key_obj = _authenticate_api_key(api_key_str)
+
+    if not api_key_obj:
+        return Response(
+            {
+                'success': False,
+                'error': 'Invalid or missing API key. Provide X-API-Key header or api_key parameter.'
+            },
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+
+    user = api_key_obj.user
+
+    required_fields = ['post_url', 'price', 'social_network_code', 'crowd_tasks_data']
+    missing_fields = [field for field in required_fields if field not in request.data]
+    if missing_fields:
+        return Response(
+            {
+                'success': False,
+                'error': f'Missing required fields: {", ".join(missing_fields)}'
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    post_url = request.data.get('post_url')
+    social_network_code = request.data.get('social_network_code')
+    crowd_tasks_data = request.data.get('crowd_tasks_data')
+    is_pinned = bool(request.data.get('is_pinned', False))
+
+    # Валидируем action type: разрешаем только COMMENT для крауд-задач
+    action_type = str(request.data.get('type', 'COMMENT')).upper()
+    if action_type != 'COMMENT':
+        return Response(
+            {
+                'success': False,
+                'error': 'Crowd tasks support only action type COMMENT'
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Валидация crowd_tasks_data
+    if not isinstance(crowd_tasks_data, list) or len(crowd_tasks_data) == 0:
+        return Response(
+            {
+                'success': False,
+                'error': 'crowd_tasks_data must be a non-empty list of items with "text"'
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    for item in crowd_tasks_data:
+        if not isinstance(item, dict) or 'text' not in item or not str(item['text']).strip():
+            return Response(
+                {
+                    'success': False,
+                    'error': 'Each crowd task must contain non-empty "text" field'
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    try:
+        price = int(request.data.get('price'))
+    except (TypeError, ValueError):
+        return Response(
+            {
+                'success': False,
+                'error': 'price must be a positive integer'
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if price <= 0:
+        return Response(
+            {
+                'success': False,
+                'error': 'price must be greater than 0'
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        social_network = SocialNetwork.objects.get(code=social_network_code)
+    except SocialNetwork.DoesNotExist:
+        return Response(
+            {
+                'success': False,
+                'error': f'Social network with code {social_network_code} not found'
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        user_profile = UserProfile.objects.get(user=user)
+    except UserProfile.DoesNotExist:
+        logger.error(f"[public_api] UserProfile not found for user {user.id}")
+        return Response(
+            {'success': False, 'error': 'User profile not found'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+    if user_profile.available_tasks <= 0:
+        return Response(
+            {
+                'success': False,
+                'error': 'No available tasks left. Please purchase more tasks.'
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Рассчитываем actions_required: если не передан или <=0 — ставим по количеству crowd-комментариев
+    actions_required_raw = request.data.get('actions_required')
+    try:
+        actions_required = int(actions_required_raw) if actions_required_raw is not None else len(crowd_tasks_data)
+    except (TypeError, ValueError):
+        actions_required = len(crowd_tasks_data)
+
+    if actions_required <= 0:
+        actions_required = len(crowd_tasks_data)
+
+    # Проверяем дубликаты по URL + action + social_network
+    normalized_post_url = _normalize_url(post_url)
+    active_tasks = Task.objects.filter(
+        status='ACTIVE',
+        type=action_type,
+        social_network=social_network
+    ).only('id', 'post_url')
+
+    for task in active_tasks:
+        if _normalize_url(task.post_url) == normalized_post_url:
+            return Response({
+                'success': False,
+                'error': 'A task with this URL and action type already exists and is being completed by our community',
+                'existing_task_id': task.id
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        with transaction.atomic():
+            user_profile = UserProfile.objects.select_for_update().get(pk=user_profile.pk)
+
+            discounted_cost, original_cost = user_profile.calculate_task_cost(price, actions_required)
+
+            if discounted_cost > user_profile.balance:
+                return Response(
+                    {
+                        'success': False,
+                        'error': 'Insufficient balance to create task',
+                        'required_balance': discounted_cost,
+                        'current_balance': user_profile.balance
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            payload = {
+                'post_url': post_url,
+                'type': action_type,
+                'price': price,
+                'actions_required': actions_required,
+                'social_network_code': social_network_code,
+                'task_type': 'CROWD',
+                'crowd_tasks_data': crowd_tasks_data,
+                'meaningful_comment': True,
+                'is_pinned': is_pinned,
+            }
+
+            serializer = TaskSerializer(data=payload)
+            if not serializer.is_valid():
+                error_messages = []
+                for field, errors in serializer.errors.items():
+                    if isinstance(errors, list):
+                        for error in errors:
+                            if isinstance(error, dict):
+                                error_messages.append(f"{field}: {', '.join(str(v) for v in error.values())}")
+                            else:
+                                error_messages.append(f"{field}: {str(error)}")
+                    else:
+                        error_messages.append(f"{field}: {str(errors)}")
+
+                error_detail = '; '.join(error_messages) if error_messages else 'Validation error'
+                return Response(
+                    {
+                        'success': False,
+                        'error': error_detail
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            user_profile.balance -= discounted_cost
+            user_profile.save(update_fields=['balance'])
+
+            chosen_country = (user_profile.chosen_country or user_profile.country_code or '').upper()
+            try:
+                base_actions_required = int(actions_required)
+            except Exception:
+                base_actions_required = actions_required
+            bonus_actions = 0
+            if chosen_country and chosen_country in BONUS_ACTION_COUNTRIES:
+                try:
+                    bonus_actions = int(round(base_actions_required * BONUS_ACTION_RATE))
+                except Exception:
+                    bonus_actions = 0
+
+            task = serializer.save(
+                creator=user,
+                original_price=original_cost,
+                price=price,
+                status='ACTIVE',
+                bonus_actions=bonus_actions,
+                bonus_actions_completed=0
+            )
+
+            user_profile.decrease_available_tasks()
+
+            try:
+                send_task_created_email(task)
+            except Exception as e:
+                logger.error(f"[public_api] Error sending task created email: {str(e)}")
+
+            crowd_tasks_data_serialized = []
+            if task.crowd_tasks.exists():
+                crowd_tasks_data_serialized = CrowdTaskSerializer(task.crowd_tasks.all(), many=True).data
+
+            response_data = {
+                'success': True,
+                'task_id': task.id,
+                'message': 'Crowd task created successfully',
+                'task': {
+                    'id': task.id,
+                    'status': task.status,
+                    'post_url': task.post_url,
+                    'type': task.type,
+                    'task_type': task.task_type,
+                    'social_network_code': social_network_code,
+                    'actions_required': task.actions_required,
+                    'actions_completed': task.actions_completed,
+                    'bonus_actions': task.bonus_actions,
+                    'bonus_actions_completed': task.bonus_actions_completed,
+                    'price': task.price,
+                    'original_price': task.original_price,
+                    'created_at': task.created_at,
+                    'crowd_tasks': crowd_tasks_data_serialized
+                }
+            }
+
+            return Response(response_data, status=status.HTTP_201_CREATED)
+
+    except ValidationError as e:
+        logger.error(f"[public_api] Validation error creating crowd task: {str(e)}")
+        return Response(
+            {
+                'success': False,
+                'error': str(e)
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    except Exception as e:
+        logger.error(f"[public_api] Error creating crowd task via API: {str(e)}", exc_info=True)
+        return Response(
+            {
+                'success': False,
+                'error': 'Error creating crowd task. Please try again later.'
             },
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
