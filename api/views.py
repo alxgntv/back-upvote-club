@@ -1723,6 +1723,102 @@ def create_task(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+@authentication_classes([JWTAuthentication])
+def create_crowd_task(request):
+    """
+    Отдельный эндпоинт для создания Crowd задачи как самостоятельной сущности.
+    Требуемые поля: social_network_code, post_url, price (>=100), text.
+    """
+    required_fields = ['post_url', 'price', 'social_network_code', 'text']
+    for field in required_fields:
+        if field not in request.data or request.data.get(field) in (None, ''):
+            return Response({'detail': f"Missing required field: {field}"}, status=status.HTTP_400_BAD_REQUEST)
+
+    user_profile = request.user.userprofile
+    if user_profile.available_tasks <= 0:
+        return Response({'detail': "No available tasks left"}, status=status.HTTP_400_BAD_REQUEST)
+
+    post_url = request.data.get('post_url')
+    price = request.data.get('price')
+    social_network_code = request.data.get('social_network_code')
+    crowd_text = request.data.get('text')
+    task_type_code = request.data.get('type') or 'COMMENT'
+
+    try:
+        price = int(price)
+    except Exception:
+        return Response({'detail': 'Price must be integer'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if price < 100:
+        return Response({'detail': 'Price for Crowd Tasks must be at least 100 points'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        social_network = SocialNetwork.objects.get(code=social_network_code)
+    except SocialNetwork.DoesNotExist:
+        return Response({'detail': f"Social network with code {social_network_code} not found"}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not social_network.available_actions.filter(code=task_type_code).exists():
+        return Response({'detail': f"Action type {task_type_code} is not available for {social_network.name}"}, status=status.HTTP_400_BAD_REQUEST)
+
+    actions_required = 1
+    try:
+        with transaction.atomic():
+            user_profile = UserProfile.objects.select_for_update().get(pk=user_profile.pk)
+            discounted_cost, original_cost = user_profile.calculate_task_cost(price, actions_required)
+            if discounted_cost > user_profile.balance:
+                raise ValidationError("Insufficient balance to create crowd task")
+
+            user_profile.balance -= discounted_cost
+            user_profile.save(update_fields=['balance'])
+
+            task = Task.objects.create(
+                creator=request.user,
+                social_network=social_network,
+                type=task_type_code,
+                task_type='CROWD',
+                post_url=post_url,
+                price=price,
+                actions_required=actions_required,
+                original_price=original_cost,
+                status='ACTIVE',
+                bonus_actions=0,
+                bonus_actions_completed=0,
+                is_pinned=False
+            )
+
+            user_profile.decrease_available_tasks()
+
+            crowd_task = CrowdTask.objects.create(
+                task=task,
+                text=crowd_text,
+                status='SEARCHING',
+                sent=False
+            )
+
+            try:
+                send_crowd_task_notifications(task, crowd_task)
+            except Exception as e:
+                logger.error(f"[create_crowd_task] Error sending creation notification: {str(e)}", exc_info=True)
+
+            serializer = TaskSerializer(task, context={'request': request})
+            return Response(
+                {
+                    'success': True,
+                    'task': serializer.data,
+                    'crowd_task_id': crowd_task.id
+                },
+                status=status.HTTP_201_CREATED
+            )
+    except ValidationError as e:
+        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"[create_crowd_task] Error creating crowd task: {str(e)}", exc_info=True)
+        return Response({'detail': 'Error creating crowd task. Please try again later.'}, status=status.HTTP_400_BAD_REQUEST)
+
+
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
 @authentication_classes([JWTAuthentication])
@@ -5247,6 +5343,68 @@ def verify_website(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
+
+def _handle_crowd_comment_submission(crowd_task, comment_url: str, submitter):
+    """
+    Упрощенный пайплайн для крауд-задач: сохраняем ссылку, ставим статус ожидания,
+    уведомляем заказчика и администратора. Автоматических проверок нет.
+    """
+    cleaned_url = (comment_url or '').strip()
+    if not cleaned_url:
+        raise ValidationError('comment_url is required')
+    if 'reddit.com' not in cleaned_url.lower():
+        raise ValidationError('URL must be a Reddit URL')
+
+    crowd_task.url = cleaned_url
+    crowd_task.assigned_to = submitter
+    crowd_task.status = 'PENDING_REVIEW'
+    crowd_task.confirmed_by_parser = False
+    crowd_task.parser_log = 'Awaiting customer approval (auto checks disabled)'
+    crowd_task.save(update_fields=['url', 'assigned_to', 'status', 'confirmed_by_parser', 'parser_log', 'updated_at'])
+
+    # Нотификация заказчику по email
+    try:
+        from .utils.email_utils import get_firebase_email
+        creator_email = get_firebase_email(crowd_task.task.creator.username)
+        if creator_email:
+            email_service = EmailService()
+            dashboard_url = getattr(settings, 'SITE_URL', 'https://upvote.club') + '/dashboard/my-tasks'
+            html_content = (
+                "<p>A new comment link was submitted for your task.</p>"
+                f"<p>Task ID: <b>{crowd_task.task.id}</b></p>"
+                f"<p>Comment URL: <a href=\"{cleaned_url}\">{cleaned_url}</a></p>"
+                f"<p>Please review it here: <a href=\"{dashboard_url}\">{dashboard_url}</a></p>"
+            )
+            email_service.send_email(
+                to_email=creator_email,
+                subject='New comment submitted for your task',
+                html_content=html_content
+            )
+    except Exception as e:
+        logger.error(f"[_handle_crowd_comment_submission] Failed to send email to creator: {str(e)}", exc_info=True)
+
+    # Нотификация администратору в Telegram
+    try:
+        TELEGRAM_CHAT_ID = '133814301'
+        message = (
+            "🆕 New crowd task comment submitted\n"
+            f"Task ID: {crowd_task.task.id}\n"
+            f"CrowdTask ID: {crowd_task.id}\n"
+            f"Submitter: {submitter.username} (ID: {submitter.id})\n"
+            f"Comment URL: {cleaned_url}"
+        )
+        send_telegram_message(TELEGRAM_CHAT_ID, message)
+    except Exception as e:
+        logger.error(f"[_handle_crowd_comment_submission] Failed to send Telegram notify: {str(e)}", exc_info=True)
+
+    return {
+        'success': True,
+        'status': 'pending_review',
+        'message': 'Your link was saved and is awaiting customer approval. We will email you once it is approved.',
+        'comment_url': cleaned_url
+    }
+
+
 @api_view(['GET', 'POST', 'PATCH'])
 @permission_classes([permissions.IsAuthenticated])
 @authentication_classes([JWTAuthentication])
@@ -5422,61 +5580,12 @@ def save_comment_url(request, crowd_task_id):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Функция для проверки валидности URL - ослабленная валидация, только проверка домена Reddit
-        def is_valid_reddit_url(url):
-            if not url:
-                return False
-            try:
-                url_str = url.strip().lower()
-                return 'reddit.com' in url_str
-            except:
-                return False
-        
-        # Получаем URL комментария из запроса
         comment_url = request.data.get('comment_url')
-        if not comment_url:
-            return Response(
-                {
-                    'success': False,
-                    'error': 'comment_url is required',
-                    'step1': {
-                        'status': 'error',
-                        'message': 'Error with link saving',
-                        'error': 'comment_url is required'
-                    }
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        comment_url = comment_url.strip()
-        
-        # Проверяем валидность URL
-        if not is_valid_reddit_url(comment_url):
-            error_msg = f"URL must be a Reddit URL. Please provide a valid Reddit comment or post URL. Received: {comment_url[:100]}"
-            return Response(
-                {
-                    'success': False,
-                    'error': 'URL must be a Reddit URL',
-                    'detail': error_msg,
-                    'step1': {
-                        'status': 'error',
-                        'message': 'Error with link saving',
-                        'error': error_msg
-                    }
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Сохраняем URL комментария
         try:
-            crowd_task.url = comment_url
-            crowd_task.save(update_fields=['url', 'updated_at'])
-            logger.info(f"[save_comment_url] Saved comment URL for crowd_task {crowd_task_id}: {comment_url[:200]}")
-            
+            result = _handle_crowd_comment_submission(crowd_task, comment_url, request.user)
             return Response(
                 {
-                    'success': True,
-                    'comment_url': comment_url,
+                    **result,
                     'step1': {
                         'status': 'success',
                         'message': 'Thank you, your link has been saved',
@@ -5485,8 +5594,21 @@ def save_comment_url(request, crowd_task_id):
                 },
                 status=status.HTTP_200_OK
             )
+        except ValidationError as e:
+            return Response(
+                {
+                    'success': False,
+                    'error': str(e),
+                    'step1': {
+                        'status': 'error',
+                        'message': 'Error with link saving',
+                        'error': str(e)
+                    }
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
         except Exception as e:
-            logger.error(f"[save_comment_url] Error saving comment URL: {str(e)}")
+            logger.error(f"[save_comment_url] Error saving comment URL: {str(e)}", exc_info=True)
             return Response(
                 {
                     'success': False,
@@ -5513,99 +5635,46 @@ def save_comment_url(request, crowd_task_id):
 @authentication_classes([JWTAuthentication])
 def verify_comment(request, crowd_task_id):
     """
-    Шаг 2: Верифицирует комментарий через RapidAPI по task.post_url.
-    
-    Request body: пустой или {}
+    Упрощено: ставим задачу в ожидание проверки без автоматической валидации.
     """
     try:
-        # Получаем CrowdTask
-        try:
-            crowd_task = CrowdTask.objects.select_related('task').get(id=crowd_task_id)
-        except CrowdTask.DoesNotExist:
-            return Response(
-                {'success': False, 'error': 'Crowd task not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        # Проверяем, что задание активно
-        task = crowd_task.task
-        if task.status != 'ACTIVE':
-            return Response(
-                {'success': False, 'error': 'Task is not active'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Проверяем, что URL комментария сохранен
+        crowd_task = CrowdTask.objects.select_related('task').get(id=crowd_task_id)
+        if crowd_task.task.status != 'ACTIVE':
+            return Response({'success': False, 'error': 'Task is not active'}, status=status.HTTP_400_BAD_REQUEST)
+
         if not crowd_task.url:
             return Response(
                 {
                     'success': False,
-                    'error': 'Comment URL not saved',
+                    'error': 'Please submit comment URL first',
                     'step2': {
                         'status': 'error',
                         'message': 'Error: Comment approval failed',
-                        'error': 'Please save comment URL first'
+                        'error': 'Comment URL not saved yet'
                     }
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        # Используем URL поста из задания для поиска комментария
-        post_url = task.post_url
-        
-        logger.info(f"[verify_comment] Starting verification. post_url={post_url[:200]}, expected_text_length={len(crowd_task.text)}")
-        
-        # Верифицируем комментарий через RapidAPI
-        found, log_message = _verify_reddit_comment(post_url, crowd_task.text)
-        
-        logger.info(f"[verify_comment] Verification result: found={found}, log_message={log_message[:200]}")
-        
-        # Обновляем статус и логи
-        # Статус всегда PENDING_REVIEW до подтверждения пользователем (шаг 3)
-        if found:
-            crowd_task.confirmed_by_parser = True
-            crowd_task.status = 'PENDING_REVIEW'
-            crowd_task.assigned_to = request.user  # Сохраняем исполнителя
-            crowd_task.parser_log = f"Comment verified successfully. {log_message}"
-            crowd_task.save(update_fields=['confirmed_by_parser', 'status', 'assigned_to', 'parser_log', 'updated_at'])
-            
-            logger.info(f"[verify_comment] Comment verified successfully for crowd_task {crowd_task_id}")
-            
-            return Response(
-                {
-                    'success': True,
-                    'verified': True,
-                    'log': log_message,
-                    'step2': {
-                        'status': 'success',
-                        'message': 'Comment verified successfully by Upvote Club!',
-                        'error': None
-                    }
-                },
-                status=status.HTTP_200_OK
-            )
-        else:
-            crowd_task.confirmed_by_parser = False
-            crowd_task.status = 'PENDING_REVIEW'
-            crowd_task.assigned_to = request.user  # Сохраняем исполнителя
-            crowd_task.parser_log = f"Comment verification failed. {log_message}"
-            crowd_task.save(update_fields=['confirmed_by_parser', 'status', 'assigned_to', 'parser_log', 'updated_at'])
-            
-            logger.warning(f"[verify_comment] Comment verification failed for crowd_task {crowd_task_id}: {log_message}")
-            
-            return Response(
-                {
-                    'success': True,
-                    'verified': False,
-                    'log': log_message,
-                    'step2': {
-                        'status': 'error',
-                        'message': 'Error: Comment approval failed',
-                        'error': log_message
-                    }
-                },
-                status=status.HTTP_200_OK
-            )
+
+        crowd_task.status = 'PENDING_REVIEW'
+        crowd_task.assigned_to = request.user
+        crowd_task.confirmed_by_parser = False
+        crowd_task.parser_log = 'Awaiting customer approval (auto checks disabled)'
+        crowd_task.save(update_fields=['status', 'assigned_to', 'confirmed_by_parser', 'parser_log', 'updated_at'])
+
+        return Response(
+            {
+                'success': True,
+                'verified': False,
+                'log': 'Awaiting customer approval',
+                'step2': {
+                    'status': 'success',
+                    'message': 'Comment saved. Waiting for customer approval.',
+                    'error': None
+                }
+            },
+            status=status.HTTP_200_OK
+        )
     except Exception as e:
         logger.error(f"[verify_comment] Unexpected error: {str(e)}", exc_info=True)
         return Response(
@@ -5694,9 +5763,7 @@ def get_crowd_tasks(request):
 @authentication_classes([JWTAuthentication])
 def confirm_comment(request, crowd_task_id):
     """
-    Шаг 3: Подтверждает комментарий автором задания.
-    
-    Request body: пустой или {}
+    Шаг 3: Подтверждает комментарий автором задания и начисляет награду исполнителю.
     """
     try:
         user = request.user
@@ -5718,18 +5785,27 @@ def confirm_comment(request, crowd_task_id):
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        # Подтверждаем комментарий
-        crowd_task.confirmed_by_user = True
-        crowd_task.user_log = "Comment confirmed by task creator"
-        
-        # Переводим задание в статус COMPLETED после подтверждения пользователем
-        crowd_task.status = 'COMPLETED'
-        logger.info(f"[confirm_comment] Task completed: user confirmed comment for crowd_task {crowd_task_id}")
-        
-        crowd_task.save(update_fields=['confirmed_by_user', 'user_log', 'status', 'updated_at'])
-        
-        logger.info(f"[confirm_comment] Comment confirmed by user {user.id} for crowd_task {crowd_task_id}")
-        
+        if crowd_task.status == 'COMPLETED':
+            return Response({'success': False, 'error': 'Crowd task already completed'}, status=status.HTTP_400_BAD_REQUEST)
+
+        executor = crowd_task.assigned_to
+        bounty_amount = int(task.price / 2) if task.price else 0
+
+        with transaction.atomic():
+            crowd_task.confirmed_by_user = True
+            crowd_task.user_log = "Comment confirmed by task creator"
+            crowd_task.status = 'COMPLETED'
+            crowd_task.save(update_fields=['confirmed_by_user', 'user_log', 'status', 'updated_at'])
+
+            # Начисляем награду исполнителю
+            if executor:
+                try:
+                    executor_profile = UserProfile.objects.select_for_update().get(user=executor)
+                    executor_profile.balance += bounty_amount
+                    executor_profile.save(update_fields=['balance'])
+                except Exception as e:
+                    logger.error(f"[confirm_comment] Failed to credit bounty to executor: {str(e)}", exc_info=True)
+
         # Проверяем, все ли дочерние CrowdTask завершены, чтобы перевести родительское задание в COMPLETED
         all_crowd_tasks = CrowdTask.objects.filter(task=task)
         all_completed = all_crowd_tasks.exists() and all_crowd_tasks.filter(status='COMPLETED').count() == all_crowd_tasks.count()
@@ -5739,37 +5815,31 @@ def confirm_comment(request, crowd_task_id):
             task.completed_at = timezone.now()
             task.save(update_fields=['status', 'completed_at', 'updated_at'])
             logger.info(f"[confirm_comment] Parent task {task.id} marked as COMPLETED - all crowd tasks completed")
-        
-        # Отправляем нотификации о подтверждении автором
-        try:
-            send_creator_confirmed_notifications(crowd_task)
-        except Exception as e:
-            logger.error(f"[confirm_comment] Error sending creator confirmation notifications: {str(e)}", exc_info=True)
-        
-        # Проверяем, можно ли отправить bounty (после подтверждения пользователем)
-        bounty_amount = int(task.price / 2) if task.price else 0
-        bounty_sent = False
-        
-        if crowd_task.confirmed_by_user:
-            # Отправляем bounty пользователю, который выполнил задание
-            # TODO: Реализовать логику отправки bounty
-            bounty_sent = True
-            logger.info(f"[confirm_comment] Bounty ready to send: {bounty_amount} points for crowd_task {crowd_task_id}")
-        
+
+        # Email исполнителю
+        if executor:
+            try:
+                from .utils.email_utils import get_firebase_email
+                executor_email = get_firebase_email(executor.username)
+                if executor_email:
+                    email_service = EmailService()
+                    html_content = (
+                        "<p>Your comment has been approved by the customer.</p>"
+                        f"<p>We credited <b>{bounty_amount} points</b> to your balance.</p>"
+                    )
+                    email_service.send_email(
+                        to_email=executor_email,
+                        subject='Your comment was approved',
+                        html_content=html_content
+                    )
+            except Exception as e:
+                logger.error(f"[confirm_comment] Failed to send email to executor: {str(e)}", exc_info=True)
+
         return Response(
             {
                 'success': True,
-                'step3': {
-                    'status': 'success',
-                    'message': 'Comment verified successfully by Customer',
-                    'error': None
-                },
-                'step4': {
-                    'status': 'success' if bounty_sent else 'waiting',
-                    'message': f'Bounty sent successfully to your balance. {bounty_amount} points' if bounty_sent else f'Receive bounty: {bounty_amount} points',
-                    'error': None,
-                    'bounty_amount': bounty_amount
-                }
+                'message': 'Comment approved. Bounty credited.',
+                'bounty_amount': bounty_amount
             },
             status=status.HTTP_200_OK
         )
@@ -5794,14 +5864,7 @@ def confirm_comment(request, crowd_task_id):
 @authentication_classes([JWTAuthentication])
 def verify_crowd_task_comment(request, crowd_task_id):
     """
-    Верифицирует комментарий Crowd Task через Reddit API.
-    
-    Request body:
-    {
-        "comment_url": "https://www.reddit.com/r/.../comments/.../comment_id/"
-    }
-    
-    Или можно передать только ссылку на пост, тогда будет искаться комментарий по тексту.
+    Упрощенный флоу: сохраняем ссылку и ставим в ожидание ручной проверки.
     """
     try:
         user = request.user
@@ -5823,262 +5886,43 @@ def verify_crowd_task_comment(request, crowd_task_id):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Получаем URL комментария из запроса
-        comment_url = request.data.get('comment_url')
-        request_url = comment_url.strip() if comment_url else None
-        
-        # Функция для проверки валидности URL - ослабленная валидация, только проверка домена Reddit
-        def is_valid_reddit_url(url):
-            if not url:
-                return False
-            try:
-                url_str = url.strip().lower()
-                # Проверяем только наличие домена reddit.com в строке
-                return 'reddit.com' in url_str
-            except:
-                return False
-        
-        # Проверяем валидность переданного URL
-        request_url_valid = is_valid_reddit_url(request_url) if request_url else False
-        
-        # Если переданный URL невалиден, проверяем сохраненный URL
-        if request_url and not request_url_valid:
-            if crowd_task.url:
-                # Используем сохраненный URL вместо невалидного из запроса (даже если он невалиден)
-                comment_url = crowd_task.url
-                logger.info(f"[verify_crowd_task_comment] Request URL invalid, using saved URL from database: {comment_url[:200]}")
-            else:
-                # Переданный URL невалиден и сохраненного URL нет - возвращаем ошибку
-                error_msg = f"Invalid URL format. Please provide a valid Reddit URL (e.g., https://www.reddit.com/r/.../comments/.../). Received: {request_url[:100]}"
-                logger.warning(f"[verify_crowd_task_comment] Invalid URL format: {request_url[:100]}")
-                return Response(
-                    {
-                        'success': False,
-                        'error': 'Invalid URL format',
-                        'detail': error_msg,
-                        'steps': {
-                            'step1': {
-                                'status': 'error',
-                                'message': 'Error with link saving',
-                                'error': error_msg
-                            },
-                            'step2': {
-                                'status': 'waiting',
-                                'message': 'Waiting for your comment approval from our system',
-                                'error': None
-                            },
-                            'step3': {
-                                'status': 'waiting',
-                                'message': 'Waiting for your comment approval by Customer',
-                                'error': None
-                            },
-                            'step4': {
-                                'status': 'waiting',
-                                'message': 'Receive bounty: 0 points',
-                                'error': None,
-                                'bounty_amount': 0
-                            }
-                        }
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        elif not request_url and crowd_task.url:
-            # Если URL не передан, но есть сохраненный URL в базе - используем его
-            comment_url = crowd_task.url
-            logger.info(f"[verify_crowd_task_comment] No URL in request, using saved URL from database: {comment_url[:200]}")
-        elif request_url and request_url_valid:
-            # Переданный URL валиден - используем его
-            comment_url = request_url
-            logger.info(f"[verify_crowd_task_comment] Using valid URL from request: {comment_url[:200]}")
-        
+        comment_url = request.data.get('comment_url') or crowd_task.url
         if not comment_url:
             return Response(
                 {'success': False, 'error': 'comment_url is required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        # Ослабленная валидация URL - проверяем только наличие домена Reddit
-        comment_url = comment_url.strip()
-        
-        # Проверяем, что это URL Reddit (только проверка наличия домена)
-        if not is_valid_reddit_url(comment_url):
-            error_msg = f"URL must be a Reddit URL. Please provide a valid Reddit comment or post URL. Received: {comment_url[:100]}"
-            logger.warning(f"[verify_crowd_task_comment] Not a Reddit URL: {comment_url[:100]}")
-            return Response(
-                {
-                    'success': False,
-                    'error': 'URL must be a Reddit URL',
-                    'detail': error_msg,
-                    'steps': {
-                        'step1': {
-                            'status': 'error',
-                            'message': 'Error with link saving',
-                            'error': error_msg
-                        },
-                        'step2': {
-                            'status': 'waiting',
-                            'message': 'Waiting for your comment approval from our system',
-                            'error': None
-                        },
-                        'step3': {
-                            'status': 'waiting',
-                            'message': 'Waiting for your comment approval by Customer',
-                            'error': None
-                        },
-                        'step4': {
-                            'status': 'waiting',
-                            'message': 'Receive bounty: 0 points',
-                            'error': None,
-                            'bounty_amount': 0
-                        }
-                    }
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Используем URL поста из задания, а не извлекаем его из URL комментария
-        # Это гарантирует, что мы ищем комментарий в правильном посте, указанном в задании
-        post_url = task.post_url
-        
-        # Логируем используемый URL поста для отладки
-        logger.info(f"[verify_crowd_task_comment] Using post_url from task. task.post_url={task.post_url[:200]}, comment_url={comment_url[:200]}")
-        
-        # Проверяем, есть ли уже сохраненный URL в задании
-        # Если URL уже сохранен - не сохраняем заново, шаг 1 = success
-        if crowd_task.url:
-            # URL уже сохранен в задании - не сохраняем заново
-            link_saved = True
-            link_error = None
-            logger.info(f"[verify_crowd_task_comment] URL already saved in task, skipping save. saved_url={crowd_task.url[:200]}")
-        else:
-            # URL не сохранен - сохраняем переданный URL (если он валиден)
-            if is_valid_reddit_url(comment_url):
-                try:
-                    crowd_task.url = comment_url
-                    crowd_task.save(update_fields=['url', 'updated_at'])
-                    logger.info(f"[verify_crowd_task_comment] Saving comment URL for crowd_task {crowd_task_id}: {comment_url[:200]}")
-                    link_saved = True
-                    link_error = None
-                except Exception as e:
-                    logger.error(f"[verify_crowd_task_comment] Error saving comment URL: {str(e)}")
-                    link_saved = False
-                    link_error = str(e)
-            else:
-                # Переданный URL невалиден и нет сохраненного URL
-                link_saved = False
-                link_error = f"Invalid URL format. Please provide a valid Reddit URL. Received: {comment_url[:100]}"
-                logger.warning(f"[verify_crowd_task_comment] Invalid URL format: {comment_url[:100]}")
-        
-        # Верифицируем комментарий
-        logger.info(f"[verify_crowd_task_comment] Starting verification. post_url={post_url[:200]}, expected_text_length={len(crowd_task.text)}")
-        found, log_message = _verify_reddit_comment(post_url, crowd_task.text)
-        logger.info(f"[verify_crowd_task_comment] Verification result: found={found}, log_message={log_message[:200]}")
-        
-        # Step 1: Link saving status
-        if link_saved:
-            step1_status = 'success'
-            step1_message = 'Thank you, your link has been saved'
-        else:
-            step1_status = 'error'
-            step1_message = 'Error with link saving'
-        
-        # Обновляем статус и логи
-        # Статус всегда PENDING_REVIEW до подтверждения пользователем (шаг 3)
-        if found:
-            crowd_task.confirmed_by_parser = True
-            crowd_task.status = 'PENDING_REVIEW'
-            crowd_task.assigned_to = user  # Сохраняем исполнителя
-            crowd_task.parser_log = f"Comment verified successfully. {log_message}"
-            crowd_task.save(update_fields=['confirmed_by_parser', 'status', 'assigned_to', 'parser_log', 'updated_at'])
-            
-            logger.info(f"[verify_crowd_task_comment] Comment verified successfully for crowd_task {crowd_task_id}. URL saved: {comment_url}")
-            
-            # Отправляем нотификации о подтверждении парсером
-            try:
-                send_parser_confirmed_notifications(crowd_task)
-            except Exception as e:
-                logger.error(f"[verify_crowd_task_comment] Error sending parser confirmation notifications: {str(e)}", exc_info=True)
-            
-            # Step 2: System verification - success
-            step2_status = 'success'
-            step2_message = 'Comment verified successfully by Upvote Club!'
-            step2_error = None
-        else:
-            # Сохраняем URL даже если комментарий не найден
-            crowd_task.confirmed_by_parser = False
-            crowd_task.status = 'PENDING_REVIEW'
-            crowd_task.assigned_to = user  # Сохраняем исполнителя
-            crowd_task.parser_log = f"Comment verification failed. {log_message}"
-            crowd_task.save(update_fields=['confirmed_by_parser', 'status', 'assigned_to', 'parser_log', 'updated_at'])
-            
-            logger.warning(f"[verify_crowd_task_comment] Comment verification failed for crowd_task {crowd_task_id}: {log_message}. URL saved: {comment_url}")
-            
-            # Отправляем нотификацию о неудачной проверке парсером
-            try:
-                send_parser_failed_notification(crowd_task)
-            except Exception as e:
-                logger.error(f"[verify_crowd_task_comment] Error sending parser failure notification: {str(e)}", exc_info=True)
-            
-            # Step 2: System verification - error
-            step2_status = 'error'
-            step2_message = 'Error: Comment approval failed'
-            step2_error = log_message
-        
-        # Step 3: Customer approval status
-        if crowd_task.confirmed_by_user:
-            step3_status = 'success'
-            step3_message = 'Comment verified successfully by Customer'
-            step3_error = None
-        else:
-            step3_status = 'waiting'
-            step3_message = 'Waiting for your comment approval by Customer. This usually takes up to 24 hours. If the customer does not confirm within 24 hours, we will automatically transfer the bounty to your balance.'
-            step3_error = None
-        
-        # Step 4: Bounty status
-        # Calculate bounty amount (task.price / 2)
+
+        result = _handle_crowd_comment_submission(crowd_task, comment_url, user)
+
         bounty_amount = int(task.price / 2) if task.price else 0
-        
-        # Bounty is ready if both parser and customer confirmed
-        if crowd_task.confirmed_by_parser and crowd_task.confirmed_by_user:
-            step4_status = 'success'
-            step4_message = f'Bounty sent successfully to your balance. {bounty_amount} points'
-            step4_error = None
-        else:
-            step4_status = 'waiting'
-            step4_message = f'Receive bounty: {bounty_amount} points'
-            step4_error = None
-        
-        # Build response with 4 steps
         response_data = {
-            'success': True,
-            'verified': found,
-            'comment_url': comment_url,
-            'log': log_message,
+            **result,
             'steps': {
                 'step1': {
-                    'status': step1_status,
-                    'message': step1_message,
-                    'error': link_error
+                    'status': 'success',
+                    'message': 'Thank you, your link has been saved',
+                    'error': None
                 },
                 'step2': {
-                    'status': step2_status,
-                    'message': step2_message,
-                    'error': step2_error
+                    'status': 'success',
+                    'message': 'Waiting for customer approval.',
+                    'error': None
                 },
                 'step3': {
-                    'status': step3_status,
-                    'message': step3_message,
-                    'error': step3_error
+                    'status': 'waiting',
+                    'message': 'Waiting for your comment approval by Customer. This usually takes up to 24 hours.',
+                    'error': None
                 },
                 'step4': {
-                    'status': step4_status,
-                    'message': step4_message,
-                    'error': step4_error,
+                    'status': 'waiting',
+                    'message': f'Receive bounty: {bounty_amount} points',
+                    'error': None,
                     'bounty_amount': bounty_amount
                 }
             }
         }
-        
+
         return Response(response_data, status=status.HTTP_200_OK)
             
     except Exception as e:

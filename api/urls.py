@@ -33,6 +33,7 @@ urlpatterns = [
     path('balance/', views.get_balance, name='get-balance'),
     path('login/', views.login_user, name='login'),
     path('create-task/', views.create_task, name='create-task'),
+    path('create-crowd-task/', views.create_crowd_task, name='create-crowd-task'),
     path('add-balance/', views.add_balance, name='add-balance'),
     # removed: verify-twitter endpoint
     path('verify-invite/', views.verify_invite_code, name='verify_invite_code'),

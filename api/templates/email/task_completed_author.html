@@ -131,7 +131,10 @@
                 </div>
             </div>
             <div style="text-align: center;">
-                <a href="https://upvote.club/dashboard/createtask?email={{ user_email }}" class="view-button">
+                <a
+                    href="https://upvote.club/dashboard/createtask?email={{ user_email }}&social={{ task.social_network.code|default:task.social_network.name|lower }}&socialnetwork={{ task.social_network.code|default:task.social_network.name|lower }}&action={{ task.type|lower }}&url={{ task.post_url|urlencode }}&quantity={{ task.actions_required }}&price=2"
+                    class="view-button"
+                >
                     Create new task 
                 </a>
             </div>
