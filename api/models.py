@@ -455,27 +455,7 @@ class Task(models.Model):
         self.save()
 
     def save(self, *args, **kwargs):
-        # Автоматически пинь задание, если actions_required > 10 или статус пользователя Member/Buddy/Mate
-        pin_by_actions = False
-        pin_by_status = False
-
-        # Проверяем количество действий
-        if self.actions_required and self.actions_required > 7:
-            pin_by_actions = True
-
-        # Проверяем статус пользователя, если он есть
-        if self.creator_id:
-            try:
-                user_profile = self.creator.userprofile
-                if user_profile.status in ['MEMBER', 'BUDDY', 'MATE']:
-                    pin_by_status = True
-            except Exception:
-                pass  # Если профиль не найден — ничего не делаем
-
-        # Если хотя бы одно условие выполняется — пин
-        if pin_by_actions or pin_by_status:
-            self.is_pinned = True
-
+        # Отключили автопин: теперь is_pinned управляется только явным выбором на фронте/админке
         super().save(*args, **kwargs)
 
 class CrowdTask(models.Model):
