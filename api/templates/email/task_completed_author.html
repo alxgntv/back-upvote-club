@@ -111,20 +111,12 @@
                     <span class="task-stat-label">👉 Task Type: </span>
                     <span class="task-stat-value">{{ task.type }} ({{ task.social_network.name }})</span>
                 </div>
-                <div class="task-stat">
-                    <span class="task-stat-label">🌐 Task URL: </span>
-                    <span class="task-stat-value">{{ task.post_url }}</span>
-                </div>
                 {% if completion_time != 'N/A' and completion_hours < 10 %}
                 <div class="task-stat">
                     <span class="task-stat-label">⏰ Completion Time: </span>
                     <span class="task-stat-value">{{ completion_time }}</span>
                 </div>
                 {% endif %}
-                <div class="task-stat">
-                    <span class="task-stat-label">🧗‍♂️ Requested {{ task.type }}: </span>
-                    <span class="task-stat-value">{{ task.actions_required }}</span>
-                </div>
                 <div class="task-stat">
                     <span class="task-stat-label">📈 Shipped {{ task.social_network.name }} {{ task.type }}: </span>
                     <span class="task-stat-value">{{ task.actions_completed }}</span>
