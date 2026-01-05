@@ -1336,6 +1336,13 @@ class BuyLanding(models.Model):
         help_text='Type of action for this buy landing page',
         related_name='buy_landings'
     )
+    reviews = models.ManyToManyField(
+        'Review',
+        blank=True,
+        related_name='buy_landings',
+        verbose_name='Reviews',
+        help_text='Select reviews to display on this buy landing'
+    )
     slug = models.SlugField(
         max_length=255,
         unique=True,

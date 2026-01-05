@@ -6049,7 +6049,14 @@ class BuyLandingViewSet(viewsets.ReadOnlyModelViewSet):
     ViewSet для работы с buy лендингами.
     Поддерживает получение всех лендингов и получение по slug.
     """
-    queryset = BuyLanding.objects.all().select_related('social_network', 'action').order_by('-created_at')
+    queryset = BuyLanding.objects.all().select_related(
+        'social_network',
+        'action',
+    ).prefetch_related(
+        'reviews',
+        'reviews__social_network',
+        'reviews__action',
+    ).order_by('-created_at')
     serializer_class = BuyLandingSerializer
     permission_classes = [AllowAny]
     lookup_field = 'slug'

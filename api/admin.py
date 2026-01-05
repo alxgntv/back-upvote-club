@@ -2806,12 +2806,16 @@ class BuyLandingAdmin(admin.ModelAdmin):
     search_fields = ('title', 'slug', 'description', 'short_description')
     list_filter = ('social_network', 'action', 'is_indexed', 'created_at')
     readonly_fields = ('created_at', 'updated_at', 'indexed_at')
+    filter_horizontal = ('reviews',)
     fieldsets = (
         (None, {
             'fields': ('title', 'slug', 'social_network', 'action')
         }),
         ('Content', {
             'fields': ('description', 'short_description', 'h1')
+        }),
+        ('Reviews', {
+            'fields': ('reviews',)
         }),
         ('Indexing', {
             'fields': ('is_indexed', 'indexed_at', 'indexing_error')
@@ -2872,6 +2876,31 @@ class BuyLandingAdmin(admin.ModelAdmin):
                 error_message,
                 level=messages.ERROR
             )
+    
+    def formfield_for_manytomany(self, db_field, request, **kwargs):
+        """Фильтруем отзывы по социальной сети buy лендинга."""
+        if db_field.name == "reviews":
+            obj_id = request.resolver_match.kwargs.get('object_id')
+            social_network_id = None
+            if obj_id:
+                try:
+                    landing = BuyLanding.objects.get(pk=obj_id)
+                    social_network_id = landing.social_network_id
+                except BuyLanding.DoesNotExist:
+                    social_network_id = None
+            if request.method == 'POST' and not social_network_id:
+                social_network_id = request.POST.get('social_network')
+                try:
+                    social_network_id = int(social_network_id)
+                except (TypeError, ValueError):
+                    social_network_id = None
+            if social_network_id:
+                kwargs["queryset"] = Review.objects.filter(
+                    social_network_id=social_network_id
+                ).select_related('user', 'social_network', 'action', 'task').order_by('-created_at')
+            else:
+                kwargs["queryset"] = Review.objects.all().select_related('user', 'social_network', 'action', 'task').order_by('-created_at')
+        return super().formfield_for_manytomany(db_field, request, **kwargs)
     
     submit_to_google_index.short_description = 'Submit selected landings to Google Index'
 

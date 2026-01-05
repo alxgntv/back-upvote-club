@@ -667,6 +667,7 @@ class BuyLandingSerializer(serializers.ModelSerializer):
     action = ActionTypeSerializer(read_only=True)
     social_network_id = serializers.IntegerField(write_only=True, required=False)
     action_id = serializers.IntegerField(write_only=True, required=False)
+    reviews = ReviewBasicSerializer(many=True, read_only=True)
 
     class Meta:
         model = BuyLanding
@@ -681,6 +682,7 @@ class BuyLandingSerializer(serializers.ModelSerializer):
             'action',
             'action_id',
             'slug',
+            'reviews',
             'created_at',
             'updated_at'
         ]
