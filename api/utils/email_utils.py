@@ -857,7 +857,7 @@ def send_task_created_email(task):
         action_name = task.type.upper()
         
         # Формируем subject
-        subject = f"Your task for {task.actions_required} {task.social_network.name} {action_name} created"
+        subject = f"{task.actions_required} free {task.social_network.name} {action_name} under the way! 🎉"
         
         # Формируем HTML контент письма
         html_content = f"""
@@ -867,46 +867,19 @@ def send_task_created_email(task):
         <h2 style="color: #2563eb;">Your task has been created! 🎉</h2>
         
         <div style="background-color: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0;">
-            <p style="margin: 5px 0;"><strong>Task Details:</strong></p>
-            <p style="margin: 5px 0;">• Network: {task.social_network.name}</p>
-            <p style="margin: 5px 0;">• Action: {action_name}</p>
-            <p style="margin: 5px 0;">• Number of actions: {task.actions_required}</p>
-            <p style="margin: 5px 0;">• URL: <a href="{task.post_url}" style="color: #2563eb;">{task.post_url}</a></p>
+            <p style="margin: 5px 0;"><strong>Details:</strong></p>
+            <p style="margin: 5px 0;">Network: {task.social_network.name}</p>
+            <p style="margin: 5px 0;">Action: {action_name}</p>
+            <p style="margin: 5px 0;">Number of actions: {task.actions_required}</p>
+            <p style="margin: 5px 0;">Type: Free</p>
+            <p style="margin: 5px 0;"><a href="{settings.SITE_URL}/dashboard/subscribe?plan=MATE&billing=monthly#payment" style="color: #2563eb; text-decoration: none; font-weight: bold;">Upgrade to get Premium</a>: up to 7500 {task.social_network.name} {action_name} in premium mode</p>
         </div>
-
-        <h3 style="color: #2563eb; margin-top: 30px;">How Upvote Club Works:</h3>
-        
         <div style="margin: 20px 0;">
-            <p><strong>1. Community-Driven Platform</strong></p>
-            <p style="margin-left: 20px;">Your task is completed by real people from our community who want to earn points.</p>
-        </div>
-
-        <div style="margin: 20px 0;">
-            <p><strong>2. Completion Speed</strong></p>
-            <p style="margin-left: 20px;">The speed at which your task gets completed depends on how many community members are available today to complete tasks like yours. We'll notify you by email once your task is finished.</p>
-        </div>
-
-        <div style="margin: 20px 0;">
-            <p><strong>3. Earn Points by Helping Others</strong></p>
-            <p style="margin-left: 20px;">You can also complete tasks from other users to earn points and help grow the community. It's a win-win!</p>
-        </div>
-
-        <div style="margin: 20px 0;">
-            <p><strong>4. Create More Tasks</strong></p>
-            <p style="margin-left: 20px;">Ready to promote more content? <a href="{settings.SITE_URL}/dashboard/createtask" style="color: #2563eb; text-decoration: none; font-weight: bold;">Create another task here →</a></p>
-        </div>
-
-        <div style="margin: 20px 0;">
-            <p><strong>5. Account Limits</strong></p>
-            <p style="margin-left: 20px;">Free accounts can create 1 task every 24 hours, but you can earn points unlimited by completing other users' tasks.</p>
-        </div>
-
-                <div style="margin: 20px 0;">
-            <p><strong>5. Upgrade for More Power 🚀</strong></p>
+            <p><strong>Do not forget to upgrade your account 🚀</strong></p>
             <p style="margin-left: 20px;">
-                Upgrade your account to create <b>unlimited tasks per day</b> and get up to <b>15,000 bonus points</b>!<br>
-                <a href="{settings.SITE_URL}/dashboard/subscribe" style="color: #2563eb; text-decoration: none; font-weight: bold;">
-                    Upgrade here →
+                Upgrade your account for just <b>$1</b> to unlock <b>unlimited task creation</b> and receive <b>15,000 bonus points</b> to your balance.<br>
+                <a href="{settings.SITE_URL}/dashboard/subscribe?plan=MATE&billing=monthly#payment" style="color: #2563eb; text-decoration: none; font-weight: bold;">
+                    here
                 </a>
             </p>
         </div>
@@ -925,7 +898,6 @@ def send_task_created_email(task):
 """
         
         logger.info(f"Prepared email for task created: {subject}")
-
         email_service = EmailService()
         result = email_service.send_email(
             to_email=user_email,
