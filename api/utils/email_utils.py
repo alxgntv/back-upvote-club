@@ -543,13 +543,13 @@ def send_welcome_email(user):
             'refresh': str(refresh_token),
             'access': str(refresh_token.access_token),
         })
-        confirm_url = f"{settings.SITE_URL}/onboarding/country?{tokenized_params}"
+        confirm_url = f"https://upvote.club/onboarding/country?{tokenized_params}"
         html_content = f"""
 <html>
 <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #111827; background-color: #f9fafb; padding: 0; margin: 0;">
   <div style="max-width: 640px; margin: 0 auto; padding: 32px 24px;">
     <div style="background: white; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); padding: 32px;">
-      <h1 style="font-size: 24px; margin: 0 0 12px; color: #111827;">🧗‍♀️ Upvote Club: Confirm your email</h1>
+      <h1 style="font-size: 16px; margin: 0 0 12px; color: #111827;">🧗‍♀️ Upvote Club: Confirm your email</h1>
       <p style="margin: 0 0 16px; color: #4b5563;">Click the button below to confirm your email and continue onboarding.</p>
       <div style="text-align: center; margin: 24px 0;">
         <a href="{confirm_url}" style="display: inline-block; padding: 14px 22px; background: #4f46e5; color: #fff; text-decoration: none; border-radius: 12px; font-weight: 600;">Confirm</a>
