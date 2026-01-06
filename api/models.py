@@ -150,6 +150,17 @@ class UserProfile(models.Model):
         verbose_name='Black Friday Subscribed',
         help_text='Whether user subscribed to Black Friday deal notifications'
     )
+    welcome_email_sent = models.BooleanField(
+        default=False,
+        verbose_name='Welcome email sent',
+        help_text='Whether welcome/confirmation email was sent'
+    )
+    welcome_email_sent_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Welcome email sent at',
+        help_text='Timestamp when welcome/confirmation email was sent'
+    )
 
     def save(self, *args, **kwargs):
         is_new = self.pk is None
@@ -405,6 +416,23 @@ class Task(models.Model):
     email_sent = models.BooleanField(default=False)
     email_sent_at = models.DateTimeField(null=True, blank=True)
     email_send_error = models.TextField(null=True, blank=True)
+    creation_email_sent = models.BooleanField(
+        default=False,
+        verbose_name='Creation email sent',
+        help_text='Whether task creation email was sent'
+    )
+    creation_email_sent_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Creation email sent at',
+        help_text='Timestamp when task creation email was sent'
+    )
+    creation_email_send_error = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name='Creation email send error',
+        help_text='Last error while sending creation email'
+    )
     is_pinned = models.BooleanField(default=False, verbose_name='Pin at the top', help_text='If checked, this task will always be shown at the top of the list')
     # Показывать ли расширенный вид задачи на фронте
     longview = models.BooleanField(default=False, verbose_name='Long view', help_text='If checked, show extended task view in UI')
@@ -435,6 +463,15 @@ class Task(models.Model):
             self.email_sent_at = timezone.now() if success else None
             self.email_send_error = error_message if not success else None
             self.save(update_fields=['email_sent', 'email_sent_at', 'email_send_error'])
+        except Exception:
+            pass
+
+    def log_creation_email_status(self, success: bool, error_message: str = None):
+        try:
+            self.creation_email_sent = success
+            self.creation_email_sent_at = timezone.now() if success else None
+            self.creation_email_send_error = error_message if not success else None
+            self.save(update_fields=['creation_email_sent', 'creation_email_sent_at', 'creation_email_send_error'])
         except Exception:
             pass
 

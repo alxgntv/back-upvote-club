@@ -16,7 +16,6 @@ from .models import (
     SocialNetwork
 )
 from .serializers import TaskSerializer, CrowdTaskSerializer
-from .utils.email_utils import send_task_created_email
 from .constants import BONUS_ACTION_COUNTRIES, BONUS_ACTION_RATE
 import logging
 import hashlib
@@ -463,11 +462,7 @@ def create_task_via_api(request):
             # Уменьшаем количество доступных заданий
             user_profile.decrease_available_tasks()
             
-            # Отправляем email о создании задания
-            try:
-                send_task_created_email(task)
-            except Exception as e:
-                logger.error(f"[public_api] Error sending task created email: {str(e)}")
+            # Email о создании задания отправляется отдельной командой
             
             logger.info(f"[public_api] Task created successfully via API: task_id={task.id}, user_id={user.id}")
             
@@ -747,10 +742,7 @@ def create_crowd_task_via_api(request):
 
             user_profile.decrease_available_tasks()
 
-            try:
-                send_task_created_email(task)
-            except Exception as e:
-                logger.error(f"[public_api] Error sending task created email: {str(e)}")
+            # Email о создании задания отправляется отдельной командой
 
             crowd_tasks_data_serialized = []
             if task.crowd_tasks.exists():

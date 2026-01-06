@@ -55,7 +55,7 @@ from django.db import IntegrityError
 from .auto_actions import TwitterAutoActions
 from django.db import connection
 import logging
-from .utils.email_utils import send_welcome_email, send_task_deleted_due_to_link_email, send_task_created_email
+from .utils.email_utils import send_welcome_email, send_task_deleted_due_to_link_email
 import time
 import stripe
 from .constants import SUBSCRIPTION_PLAN_CONFIG, SUBSCRIPTION_PERIODS
@@ -528,7 +528,8 @@ def register_user(request):
                     status='FREE',
                     country_code=country_code,
                     invite_code=invite_code_obj,
-                    invited_by=inviter_user  # Устанавливаем связь с пригласившим
+                    invited_by=inviter_user,  # Устанавливаем связь с пригласившим
+                    welcome_email_sent=False
                 )
                 
                 # Отправляем email уведомление создателю промокода
@@ -552,10 +553,22 @@ def register_user(request):
                             logger.info(f"[register_user] Sent referral notification email to {inviter_email} for user {inviter_user.id}")
                     except Exception as e:
                         logger.error(f"[register_user] Error sending referral notification email: {str(e)}")
-                
                 # Создаем безлимитный инвайт-код для нового пользователя
                 user_profile.update_available_tasks()
                 new_invite_code = user_profile.create_unlimited_invite_code()
+
+                # Отправляем welcome/confirm email сразу после регистрации
+                welcome_sent = False
+                try:
+                    welcome_sent = send_welcome_email(user)
+                except Exception as e:
+                    logger.error(f"[register_user] Error sending welcome email: {str(e)}")
+                try:
+                    user_profile.welcome_email_sent = welcome_sent
+                    user_profile.welcome_email_sent_at = timezone.now() if welcome_sent else None
+                    user_profile.save(update_fields=['welcome_email_sent', 'welcome_email_sent_at'])
+                except Exception as e:
+                    logger.error(f"[register_user] Error updating welcome email flags: {str(e)}")
                 
                 # 3. Если есть данные для задачи - создаем её
                 if task_data:
@@ -594,12 +607,7 @@ def register_user(request):
                     user_profile.balance -= total_cost
                     user_profile.decrease_available_tasks()
                     user_profile.save(update_fields=['balance'])
-                    
-                    # Отправляем email о создании задания
-                    try:
-                        send_task_created_email(task)
-                    except Exception as e:
-                        logger.error(f"[register_user] Error sending task created email: {str(e)}")
+                    # Email о создании задания отправляется отдельной командой
 
         # 4. Создаем токены
         refresh = RefreshToken.for_user(user)
@@ -1707,11 +1715,7 @@ def create_task(request):
             # Уменьшаем количество доступных заданий
             user_profile.decrease_available_tasks()
 
-            # Отправляем email о создании задания
-            try:
-                send_task_created_email(task)
-            except Exception as e:
-                logger.error(f"[create_task] Error sending task created email: {str(e)}")
+            # Email о создании задания отправляется отдельной командой
             
             return Response(serializer.data, status=status.HTTP_201_CREATED)
             

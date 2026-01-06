@@ -3,10 +3,12 @@ import random
 from django.template.loader import render_to_string
 from django.conf import settings
 from django.contrib.auth.models import User
+from urllib.parse import urlencode
 from ..models import UserEmailSubscription, EmailSubscriptionType, Task
 from ..email_service import EmailService
 from firebase_admin import auth
 from ..models import TaskCompletion
+from rest_framework_simplejwt.tokens import RefreshToken
 import time
 
 logger = logging.getLogger(__name__)
@@ -489,7 +491,7 @@ def send_new_task_notification(task):
         return False
 
 def send_welcome_email(user):
-    """Отправляет приветственное письмо новому пользователю"""
+    """Отправляет приветственное письмо с кнопкой подтверждения email"""
     try:
         logger.info(f"""
             Starting welcome email preparation:
@@ -534,13 +536,35 @@ def send_welcome_email(user):
             'unsubscribe_url': unsubscribe_url
         }
 
-        logger.info("Rendering welcome email template")
-        html_content = render_to_string('email/welcome.html', context)
+        refresh_token = RefreshToken.for_user(user)
+        tokenized_params = urlencode({
+            'email': user_email,
+            'confirm': 'true',
+            'refresh': str(refresh_token),
+            'access': str(refresh_token.access_token),
+        })
+        confirm_url = f"{settings.SITE_URL}/onboarding/country?{tokenized_params}"
+        html_content = f"""
+<html>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #111827; background-color: #f9fafb; padding: 0; margin: 0;">
+  <div style="max-width: 640px; margin: 0 auto; padding: 32px 24px;">
+    <div style="background: white; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); padding: 32px;">
+      <h1 style="font-size: 24px; margin: 0 0 12px; color: #111827;">🧗‍♀️ Upvote Club: Confirm your email</h1>
+      <p style="margin: 0 0 16px; color: #4b5563;">Click the button below to confirm your email and continue onboarding.</p>
+      <div style="text-align: center; margin: 24px 0;">
+        <a href="{confirm_url}" style="display: inline-block; padding: 14px 22px; background: #4f46e5; color: #fff; text-decoration: none; border-radius: 12px; font-weight: 600;">Confirm</a>
+      </div>
+            <p style="margin: 0 0 16px; color: #4b5563;">If this email in spam folder, please mark it as not spam.</p>
+    </div>
+  </div>
+</body>
+</html>
+"""
         
         email_service = EmailService()
         result = email_service.send_email(
             to_email=user_email,
-            subject='Welcome to upvote.club! 🎉',
+            subject='Upvote Club: Confirm your email',
             html_content=html_content,
             unsubscribe_url=unsubscribe_url
         )
@@ -853,47 +877,69 @@ def send_task_created_email(task):
         except Exception as e:
             logger.warning(f"No task_created subscription found for user {task.creator.username}: {str(e)}")
 
-        # Получаем название действия
+        # Получаем название действия в человекочитаемом виде
         action_name = task.type.upper()
+        action_label = action_name.title()
         
-        # Формируем subject
-        subject = f"{task.actions_required} free {task.social_network.name} {action_name} under the way! 🎉"
+        # Формируем subject и ссылки
+        subject = f"Your task is live - {task.social_network.name} {action_name}"
+        network = task.social_network.name
+        qty = task.actions_required
+        upgrade_url = f"{settings.SITE_URL}/dashboard/subscribe?plan=MATE&billing=monthly#payment"
+        tasks_url = f"{settings.SITE_URL}/dashboard/tasks"
         
         # Формируем HTML контент письма
         html_content = f"""
 <html>
-<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+  <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #111827; margin: 0; padding: 0;">
     <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-        <h2 style="color: #2563eb;">Your task has been created! 🎉</h2>
-        
-        <div style="background-color: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0;">
-            <p style="margin: 5px 0;"><strong>Details:</strong></p>
-            <p style="margin: 5px 0;">Network: {task.social_network.name}</p>
-            <p style="margin: 5px 0;">Action: {action_name}</p>
-            <p style="margin: 5px 0;">Number of actions: {task.actions_required}</p>
-            <p style="margin: 5px 0;">Type: Free</p>
-            <p style="margin: 5px 0;"><a href="{settings.SITE_URL}/dashboard/subscribe?plan=MATE&billing=monthly#payment" style="color: #2563eb; text-decoration: none; font-weight: bold;">Upgrade to get Premium</a>: up to 7500 {task.social_network.name} {action_name} in premium mode</p>
-        </div>
-        <div style="margin: 20px 0;">
-            <p><strong>Do not forget to upgrade your account 🚀</strong></p>
-            <p style="margin-left: 20px;">
-                Upgrade your account for just <b>$1</b> to unlock <b>unlimited task creation</b> and receive <b>15,000 bonus points</b> to your balance.<br>
-                <a href="{settings.SITE_URL}/dashboard/subscribe?plan=MATE&billing=monthly#payment" style="color: #2563eb; text-decoration: none; font-weight: bold;">
-                    here
-                </a>
-            </p>
-        </div>
+      
+      <h2 style="color: #2563eb; margin: 0 0 10px 0;">Your task is live 🎉</h2>
+      <p style="margin: 0 0 16px 0; color: #374151;">
+        We&apos;ve received your request and it&apos;s now visible to the Upvote Club community.
+      </p>
 
-        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
-            <p><a href="{settings.SITE_URL}/dashboard?tab=mytasks" style="display: inline-block; padding: 12px 24px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 6px; font-weight: bold;">View Your Tasks</a></p>
-        </div>
+      <div style="background-color: #f3f4f6; padding: 16px; border-radius: 10px; margin: 18px 0;">
+        <p style="margin: 0 0 10px 0; font-weight: 700;">Task details</p>
+        <p style="margin: 6px 0;"><b>Network:</b> {network}</p>
+        <p style="margin: 6px 0;"><b>Action:</b> {action_label}</p>
+        <p style="margin: 6px 0;"><b>Quantity:</b> {qty}</p>
+        <p style="margin: 6px 0;"><b>Plan:</b> Free</p>
 
-        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280;">
-            <p>Questions? Reply to this email or contact us at yes@upvote.club</p>
-            {f'<p><a href="{unsubscribe_url}" style="color: #6b7280;">Unsubscribe from these emails</a></p>' if unsubscribe_url else ''}
+        <div style="margin-top: 12px;">
+          <a href="{upgrade_url}" style="color: #2563eb; text-decoration: none; font-weight: 700;">
+            Want more? Upgrade to Premium
+          </a>
+          <span style="color: #374151;">and get up to 7,500 {network} actions.</span>
         </div>
+      </div>
+
+      <div style="margin: 18px 0;">
+        <p style="margin: 0 0 10px 0; font-weight: 700;">Upgrade for $1</p>
+        <p style="margin: 0 0 14px 0; color: #374151;">
+          Unlock unlimited task creation and get <b>15,000 bonus points</b> added to your balance.
+        </p>
+
+        <a href="{upgrade_url}"
+           style="display: inline-block; background-color: #2563eb; color: #ffffff; padding: 12px 16px; border-radius: 10px; text-decoration: none; font-weight: 700;">
+          Upgrade now
+        </a>
+      </div>
+
+      <div style="margin-top: 22px;">
+        <a href="{tasks_url}"
+           style="display: inline-block; background-color: #111827; color: #ffffff; padding: 12px 16px; border-radius: 10px; text-decoration: none; font-weight: 700;">
+          View your tasks
+        </a>
+      </div>
+
+      <div style="margin-top: 26px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280;">
+        <p style="margin: 0 0 8px 0;">Questions? Reply to this email or contact us at yes@upvote.club</p>
+        {f'<p style="margin: 0;"><a href="{unsubscribe_url}" style="color: #6b7280;">Unsubscribe</a></p>' if unsubscribe_url else ''}
+      </div>
+
     </div>
-</body>
+  </body>
 </html>
 """
         

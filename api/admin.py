@@ -377,7 +377,7 @@ class TaskAdmin(admin.ModelAdmin):
         'id', 'type', 'task_type', 'social_network', 'post_url', 'original_price', 'price', 
         'actions_required', 'actions_completed', 'bonus_actions', 'bonus_actions_completed', 'status', 'creator', 
         'created_at', 'completion_info', 
-        'completion_duration_display', 'email_status_display',
+        'completion_duration_display', 'email_status_display', 'creation_email_status_display',
         'longview',
         'is_pinned'  # добавляем поле для отображения в списке
     )
@@ -389,6 +389,7 @@ class TaskAdmin(admin.ModelAdmin):
         'social_network',
         'created_at',
         'email_sent',
+        'creation_email_sent',
         'is_pinned'  # фильтр по закреплённым
     )
     
@@ -404,6 +405,9 @@ class TaskAdmin(admin.ModelAdmin):
         'email_sent',
         'email_sent_at',
         'email_send_error',
+        'creation_email_sent',
+        'creation_email_sent_at',
+        'creation_email_send_error',
         'original_price'  # Добавляем original_price в readonly, он будет рассчитываться автоматически
     )
 
@@ -434,7 +438,10 @@ class TaskAdmin(admin.ModelAdmin):
             'fields': (
                 'email_sent',
                 'email_sent_at',
-                'email_send_error'
+                'email_send_error',
+                'creation_email_sent',
+                'creation_email_sent_at',
+                'creation_email_send_error'
             )
         })
     )
@@ -525,6 +532,17 @@ class TaskAdmin(admin.ModelAdmin):
         )
     email_status_display.short_description = 'Email Status'
     email_status_display.admin_order_field = 'email_sent'
+
+    def creation_email_status_display(self, obj):
+        """Статус письма о создании задачи"""
+        if obj.creation_email_sent:
+            ts = obj.creation_email_sent_at.strftime('%Y-%m-%d %H:%M:%S') if obj.creation_email_sent_at else ''
+            return format_html('<span style="color: green;">✓ Sent {}</span>', ts)
+        if obj.creation_email_send_error:
+            return format_html('<span style="color: red;">✗ Error: {}</span>', obj.creation_email_send_error)
+        return format_html('<span style="color: grey;">Not sent</span>')
+    creation_email_status_display.short_description = 'Creation Email'
+    creation_email_status_display.admin_order_field = 'creation_email_sent'
 
     def save_model(self, request, obj, form, change):
         """Обработка сохранения задания"""
@@ -789,7 +807,9 @@ class UserProfileAdmin(admin.ModelAdmin):
         'get_invited_by',
         'get_invite_code',
         'has_referrer_data',
-        'black_friday_subscribed'
+        'black_friday_subscribed',
+        'welcome_email_sent',
+        'welcome_email_sent_at'
     ]
     
     list_filter = [
@@ -801,6 +821,7 @@ class UserProfileAdmin(admin.ModelAdmin):
         'is_ambassador',
         'is_affiliate_partner',
         'black_friday_subscribed',
+        'welcome_email_sent',
         'user__taskcompletion__action',
         'user__taskcompletion__is_auto',
     ]
@@ -891,6 +912,8 @@ class UserProfileAdmin(admin.ModelAdmin):
                 'invite_code',
                 'available_invites',
                 'black_friday_subscribed',
+                'welcome_email_sent',
+                'welcome_email_sent_at',
             )
         }),
     )
