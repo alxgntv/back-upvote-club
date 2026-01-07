@@ -15,7 +15,7 @@ class Command(BaseCommand):
         parser.add_argument(
             '--days',
             type=int,
-            default=7,
+            default=1,
             help='Look back N days for newly created tasks'
         )
         parser.add_argument(
@@ -33,7 +33,7 @@ class Command(BaseCommand):
         tasks = Task.objects.filter(
             creation_email_sent=False,
             created_at__gte=cutoff,
-            status__in=['ACTIVE', 'PAUSED', 'COMPLETED']
+            status='ACTIVE'
         ).select_related('creator', 'social_network')
 
         total = tasks.count()

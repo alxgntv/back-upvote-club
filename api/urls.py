@@ -29,6 +29,7 @@ router.register(r'reviews', ReviewViewSet, basename='review')
 urlpatterns = [
     path('', include(router.urls)),
     path('register/', views.register_user, name='register'),
+    path('resend-confirmation-email/', views.resend_confirmation_email, name='resend_confirmation_email'),
     path('complete-task/<int:task_id>/', views.complete_task, name='complete-task'),
     path('balance/', views.get_balance, name='get-balance'),
     path('login/', views.login_user, name='login'),

@@ -622,6 +622,47 @@ def register_user(request):
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+@authentication_classes([JWTAuthentication])
+def resend_confirmation_email(request):
+    """
+    Переотправляет письмо подтверждения email после регистрации.
+    Ограничение: не чаще одного раза в 60 секунд.
+    """
+    try:
+        user = request.user
+        user_profile = getattr(user, 'userprofile', None)
+        if not user_profile:
+            return Response({'success': False, 'error': 'User profile not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        now = timezone.now()
+        cooldown_seconds = 60
+        last_sent_at = getattr(user_profile, 'welcome_email_sent_at', None)
+        if last_sent_at and (now - last_sent_at).total_seconds() < cooldown_seconds:
+            retry_after = int(cooldown_seconds - (now - last_sent_at).total_seconds())
+            return Response(
+                {
+                    'success': False,
+                    'error': 'Please wait before requesting another email.',
+                    'retry_after_seconds': retry_after
+                },
+                status=status.HTTP_429_TOO_MANY_REQUESTS
+            )
+
+        send_success = send_welcome_email(user)
+        if send_success:
+            user_profile.welcome_email_sent = True
+            user_profile.welcome_email_sent_at = now
+            user_profile.save(update_fields=['welcome_email_sent', 'welcome_email_sent_at'])
+            return Response({'success': True, 'message': 'Confirmation email sent'}, status=status.HTTP_200_OK)
+
+        return Response({'success': False, 'error': 'Failed to send confirmation email'}, status=status.HTTP_502_BAD_GATEWAY)
+    except Exception as e:
+        logger.error(f"[resend_confirmation_email] Error: {str(e)}", exc_info=True)
+        return Response({'success': False, 'error': 'Internal server error'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 class TaskViewSet(viewsets.ModelViewSet):
     queryset = Task.objects.all().prefetch_related(
         'completions',
