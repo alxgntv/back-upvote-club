@@ -4971,8 +4971,11 @@ def telegram_webhook(request):
                     
                     # Получаем email пользователя из Firebase
                     try:
-                        firebase_user = auth.get_user(user.username)
-                        user_email = firebase_user.email
+                        user_email = user.email
+                        if not user_email:
+                            from firebase_admin import auth
+                            firebase_user = auth.get_user(user.username)
+                            user_email = firebase_user.email
                         
                         if user_email:
                             email_service = EmailService()
