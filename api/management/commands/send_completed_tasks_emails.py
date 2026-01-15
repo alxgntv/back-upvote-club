@@ -20,7 +20,7 @@ class Command(BaseCommand):
         parser.add_argument(
             '--delay',
             type=int,
-            default=10,
+            default=5,
             help='Delay in seconds between sending emails'
         )
 
@@ -28,16 +28,17 @@ class Command(BaseCommand):
         days = options['days']
         delay = options['delay']
         
-        # Получаем все завершенные задания за последние N дней
+        # Получаем все завершенные задания за последние N дней, которым НЕ отправлено письмо
         completed_date = timezone.now() - timezone.timedelta(days=days)
         completed_tasks = Task.objects.filter(
             status='COMPLETED',
-            completed_at__gte=completed_date
+            completed_at__gte=completed_date,
+            email_sent=False
         ).select_related('creator')
         
         logger.info(f"""
-            Starting to send completion emails:
-            Total tasks found: {completed_tasks.count()}
+            Starting to send completion emails (retry for failed):
+            Total tasks with unsent emails: {completed_tasks.count()}
             Looking back days: {days}
             Delay between emails: {delay} seconds
         """)

@@ -210,12 +210,10 @@ def send_task_completed_author_email(task):
             subject='Task completed',
             html_content=html_content,  # теперь html
             unsubscribe_url=context['unsubscribe_url'],
+            bcc_email='yesupvote@gmail.com'
         )
-        logger.info(f"BCC for task completion email will be sent to yes@upvote.club and yesupvote@gmail.com")
-        
         if result:
-            logger.info(f"Successfully sent plain text email for task {task.id}")
-        
+            logger.info(f"Successfully sent task completion email for task {task.id}")
         task.log_email_status(result)
         return result
 
