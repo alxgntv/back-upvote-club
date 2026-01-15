@@ -885,8 +885,8 @@ def send_task_created_email(task):
         subject = f"Your task is live - {task.social_network.name} {action_name}"
         network = task.social_network.name
         qty = task.actions_required
-        upgrade_url = f"{settings.SITE_URL}/dashboard/subscribe?plan=MATE&billing=monthly#payment"
-        tasks_url = f"{settings.SITE_URL}/dashboard/tasks"
+        upgrade_url = f"https://upvote.club/dashboard/subscribe?plan=MATE&billing=monthly#payment"
+        tasks_url = f"https://upvote.club/dashboard/tasks"
         
         # Формируем HTML контент письма
         html_content = f"""
@@ -895,35 +895,17 @@ def send_task_created_email(task):
     <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
       
       <h2 style="color: #2563eb; margin: 0 0 10px 0;">Your task is live 🎉</h2>
-      <p style="margin: 0 0 16px 0; color: #374151;">
-        We&apos;ve received your request and it&apos;s now visible to the Upvote Club community.
-      </p>
-
       <div style="background-color: #f3f4f6; padding: 16px; border-radius: 10px; margin: 18px 0;">
         <p style="margin: 0 0 10px 0; font-weight: 700;">Task details</p>
-        <p style="margin: 6px 0;"><b>Network:</b> {network}</p>
-        <p style="margin: 6px 0;"><b>Action:</b> {action_label}</p>
+        <p style="margin: 6px 0;"><b>Ordered:</b> {network} {action_label}s</p>
         <p style="margin: 6px 0;"><b>Quantity:</b> {qty}</p>
-        <p style="margin: 6px 0;"><b>Plan:</b> Free</p>
+        <p style="margin: 6px 0;"><b>Type:</b>Free</p>
 
         <div style="margin-top: 12px;">
           <a href="{upgrade_url}" style="color: #2563eb; text-decoration: none; font-weight: 700;">
-            Want more? Upgrade to Premium
+           Upgrade and get 7,500 {network} {action_label}s.
           </a>
-          <span style="color: #374151;">and get up to 7,500 {network} actions.</span>
         </div>
-      </div>
-
-      <div style="margin: 18px 0;">
-        <p style="margin: 0 0 10px 0; font-weight: 700;">Upgrade for $1</p>
-        <p style="margin: 0 0 14px 0; color: #374151;">
-          Unlock unlimited task creation and get <b>15,000 bonus points</b> added to your balance.
-        </p>
-
-        <a href="{upgrade_url}"
-           style="display: inline-block; background-color: #2563eb; color: #ffffff; padding: 12px 16px; border-radius: 10px; text-decoration: none; font-weight: 700;">
-          Upgrade now
-        </a>
       </div>
 
       <div style="margin-top: 22px;">
