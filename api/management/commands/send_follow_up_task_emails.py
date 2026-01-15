@@ -144,7 +144,6 @@ class Command(BaseCommand):
                         failed_count += 1
                         continue
                     
-                    # Формируем контекст для письма
                     unsubscribe_url = f"{settings.SITE_URL}/api/unsubscribe/{subscription.unsubscribe_token}/"
                     formatted_completion_time = format_duration(task.completion_duration)
                     completion_hours = task.completion_duration.total_seconds() / 3600 if task.completion_duration else 0
