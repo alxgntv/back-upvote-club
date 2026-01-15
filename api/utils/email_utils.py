@@ -210,7 +210,6 @@ def send_task_completed_author_email(task):
             subject='Task completed',
             html_content=html_content,  # теперь html
             unsubscribe_url=context['unsubscribe_url'],
-            bcc_email=['yes@upvote.club', 'yesupvote@gmail.com']
         )
         logger.info(f"BCC for task completion email will be sent to yes@upvote.club and yesupvote@gmail.com")
         
@@ -277,7 +276,6 @@ def send_task_deleted_due_to_link_email(task, refund_points):
             subject=f"Your {task.social_network.name} task was deleted due to unavailable link and +{refund_points} points are back",
             html_content=html_content,
             unsubscribe_url=unsubscribe_url,
-            bcc_email=['yes@upvote.club', 'yesupvote@gmail.com']
         )
         if result:
             logger.info(f"Successfully sent task deleted email for task {task.id}")

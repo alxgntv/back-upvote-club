@@ -10,7 +10,6 @@ import tweepy
 from django.conf import settings
 from django.template.loader import render_to_string
 from django.db import models
-from api.utils.email_utils import send_withdrawal_completed_email
 
 class UserProfile(models.Model):
     DISCOUNT_RATES = {
@@ -1558,6 +1557,7 @@ class Withdrawal(models.Model):
         # Отправляем email после сохранения
         if send_email:
             try:
+                from api.utils.email_utils import send_withdrawal_completed_email
                 send_withdrawal_completed_email(self)
             except Exception as e:
                 logging.error(f"Error sending withdrawal completed email: {str(e)}", exc_info=True)
