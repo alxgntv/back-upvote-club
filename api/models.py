@@ -10,6 +10,7 @@ import tweepy
 from django.conf import settings
 from django.template.loader import render_to_string
 from django.db import models
+from api.utils.email_utils import send_withdrawal_completed_email
 
 class UserProfile(models.Model):
     DISCOUNT_RATES = {
@@ -1517,6 +1518,7 @@ class Withdrawal(models.Model):
     
     def save(self, *args, **kwargs):
         # Логируем изменения статуса
+        send_email = False
         if self.pk:
             try:
                 old_instance = Withdrawal.objects.get(pk=self.pk)
@@ -1534,6 +1536,10 @@ class Withdrawal(models.Model):
                     # Если статус изменился на PROCESSING или COMPLETED, обновляем processed_at
                     if self.status in ['PROCESSING', 'COMPLETED'] and not self.processed_at:
                         self.processed_at = timezone.now()
+                    
+                    # Если статус изменился на COMPLETED, отправляем email
+                    if self.status == 'COMPLETED' and old_instance.status != 'COMPLETED':
+                        send_email = True
                         
             except Withdrawal.DoesNotExist:
                 pass
@@ -1548,6 +1554,13 @@ class Withdrawal(models.Model):
             """)
             
         super().save(*args, **kwargs)
+        
+        # Отправляем email после сохранения
+        if send_email:
+            try:
+                send_withdrawal_completed_email(self)
+            except Exception as e:
+                logging.error(f"Error sending withdrawal completed email: {str(e)}", exc_info=True)
     
     @property
     def conversion_rate(self):

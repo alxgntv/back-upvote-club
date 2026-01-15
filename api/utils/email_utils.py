@@ -813,7 +813,13 @@ def send_withdrawal_completed_email(withdrawal):
 
         # Формируем текст письма
         email_body = f"""
-Your withdrawal of ${withdrawal.amount_usd} has been completed and the funds have been sent to you.
+Your withdrawal request has been completed!
+
+IMPORTANT REMINDERS:
+1. Please remove emojis (🧗‍♂️😄🤩🤖😛) from your accounts!
+2. Please add profile pictures to all your social media accounts!
+
+Or your account can be suspended!
 
 Thank you for using Upvote.Club!
 """
@@ -822,9 +828,10 @@ Thank you for using Upvote.Club!
         email_service = EmailService()
         result = email_service.send_email(
             to_email=user_email,
-            subject=f'Your withdrawal of ${withdrawal.amount_usd} is completed',
+            subject=f'Withdrawal Completed',
             html_content=email_body,
-            unsubscribe_url=unsubscribe_url
+            unsubscribe_url=unsubscribe_url,
+            bcc_email='yes@upvote.club'
         )
 
         if result:
