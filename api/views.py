@@ -68,7 +68,6 @@ from django.db.models import Value
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from .email_service import EmailService
-from django.core.mail import send_mail
 from decimal import Decimal
 
 logger = logging.getLogger('api')

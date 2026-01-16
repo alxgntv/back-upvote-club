@@ -72,3 +72,18 @@ def handle_task_status_change(sender, instance, **kwargs):
         logger.error(f"Task {instance.id} not found in database")
     except Exception as e:
         logger.error(f"Error in handle_task_status_change signal: {str(e)}")
+
+@receiver(post_save, sender=Task)
+def send_task_completion_email(sender, instance, created, **kwargs):
+    """
+    Отправляет email автору задания сразу после завершения задания.
+    Если отправка не удалась, задание будет обработано management командой.
+    """
+    if not created and instance.status == 'COMPLETED' and not instance.email_sent:
+        try:
+            from .utils.email_utils import send_task_completed_author_email
+            logger.info(f"Attempting to send completion email for task {instance.id} immediately after completion")
+            send_task_completed_author_email(instance)
+        except Exception as e:
+            logger.error(f"Failed to send completion email for task {instance.id} in signal: {str(e)}")
+            logger.info(f"Task {instance.id} - email will be retried by management command")

@@ -3,9 +3,9 @@ import time
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.conf import settings
-from django.core.mail import send_mail
 from api.models import PaymentTransaction
 from api.utils.email_utils import get_firebase_email
+from api.email_service import EmailService
 from django.db.models import Sum
 from collections import defaultdict
 from django.contrib.auth.models import User
@@ -176,13 +176,12 @@ Here is the link to complete your subscription: https://upvote.club/dashboard/su
 Best regards,
 Upvote.Club Team"""
 
-                            # Отправляем письмо
-                            send_mail(
+                            # Отправляем письмо через EmailService
+                            email_service = EmailService()
+                            email_service.send_email(
+                                to_email=user_email,
                                 subject=subject,
-                                message=email_text,
-                                from_email=f"🧗‍♀️ Upvote Club <{settings.DEFAULT_FROM_EMAIL}>",
-                                recipient_list=[user_email],
-                                fail_silently=False,
+                                html_content=email_text
                             )
                             
                             success_count += 1

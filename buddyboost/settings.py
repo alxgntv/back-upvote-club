@@ -417,15 +417,39 @@ CRONJOBS = [
 
 # Email settings
 TASKS_PER_EMAIL = 5
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = os.getenv('EMAIL_HOST', 'es22.siteground.eu')
-EMAIL_PORT = int(os.getenv('EMAIL_PORT', 465))
-EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', 'robot@upvote.club')
-EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '2s243_2qi+y')
-EMAIL_USE_SSL = True  # Для порта 465 нужно использовать SSL вместо TLS
-EMAIL_USE_TLS = False
-DEFAULT_FROM_EMAIL = os.getenv('EMAIL_HOST_USER', 'robot@upvote.club')
-SERVER_EMAIL = os.getenv('EMAIL_HOST_USER', 'robot@upvote.club')
+
+# Выбор email backend через переменную окружения: 'ses' для Amazon SES или 'smtp' для SMTP
+# По умолчанию 'smtp' для локальной разработки
+EMAIL_BACKEND_TYPE = os.getenv('EMAIL_BACKEND_TYPE', 'smtp')
+
+if EMAIL_BACKEND_TYPE == 'ses':
+    # Amazon SES settings
+    EMAIL_BACKEND = 'django_ses.SESBackend'
+    AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
+    AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
+    AWS_SES_REGION_NAME = os.getenv('AWS_SES_REGION_NAME')
+    if not AWS_SES_REGION_NAME:
+        raise ValueError("AWS_SES_REGION_NAME environment variable is required when using SES!")
+    AWS_SES_REGION_ENDPOINT = f'email.{AWS_SES_REGION_NAME}.amazonaws.com'
+    # Configuration Set для трекинга (если настроен в AWS SES)
+    # Игнорируем "none" как пустое значение
+    _ses_config_set = os.getenv('AWS_SES_CONFIGURATION_SET')
+    AWS_SES_CONFIGURATION_SET = None if _ses_config_set in [None, '', 'none', 'None', 'NONE'] else _ses_config_set
+    DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL')
+    SERVER_EMAIL = os.getenv('DEFAULT_FROM_EMAIL')
+elif EMAIL_BACKEND_TYPE == 'smtp':
+    # SMTP settings
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+    EMAIL_HOST = os.getenv('EMAIL_HOST')
+    EMAIL_PORT = int(os.getenv('EMAIL_PORT', 465))
+    EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
+    EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
+    EMAIL_USE_SSL = True  # Для порта 465 нужно использовать SSL вместо TLS
+    EMAIL_USE_TLS = False
+    DEFAULT_FROM_EMAIL = os.getenv('EMAIL_HOST_USER')
+    SERVER_EMAIL = os.getenv('EMAIL_HOST_USER')
+else:
+    raise ValueError(f"Invalid EMAIL_BACKEND_TYPE: {EMAIL_BACKEND_TYPE}. Must be 'ses' or 'smtp'")
 
 SITE_URL = os.getenv('SITE_URL', 'https://upvote.club')
 
