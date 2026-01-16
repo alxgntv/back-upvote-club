@@ -87,3 +87,47 @@ def send_task_completion_email(sender, instance, created, **kwargs):
         except Exception as e:
             logger.error(f"Failed to send completion email for task {instance.id} in signal: {str(e)}")
             logger.info(f"Task {instance.id} - email will be retried by management command")
+
+@receiver(post_save, sender=Task)
+def send_producthunt_promo_email(sender, instance, created, **kwargs):
+    """
+    Отправляет промо письма всем пользователям с ProductHunt при создании ProductHunt задания.
+    Вызывается один раз при создании задания со статусом ACTIVE.
+    """
+    # Отправляем только если:
+    # 1. Новое задание (created=True)
+    # 2. Это ProductHunt
+    # 3. Статус ACTIVE
+    # 4. Письмо еще не отправлено
+    
+    should_send = (
+        created and 
+        instance.status == 'ACTIVE' and 
+        not instance.promo_email_sent and
+        instance.social_network and 
+        instance.social_network.code.upper() == 'PRODUCTHUNT'
+    )
+    
+    if should_send:
+        logger.info(f"New ProductHunt task {instance.id} created with ACTIVE status - will send promo emails")
+        try:
+            # Импортируем функцию отправки
+            from .utils.email_utils import send_producthunt_campaign_emails
+            
+            logger.info(f"Starting ProductHunt promo campaign for task {instance.id}")
+            
+            # Отправляем письма
+            stats = send_producthunt_campaign_emails(instance)
+            
+            # Устанавливаем флаг что письмо отправлено
+            Task.objects.filter(pk=instance.pk).update(promo_email_sent=True)
+            
+            logger.info(f"""
+                ProductHunt promo campaign completed for task {instance.id}:
+                Sent: {stats['sent']}
+                Failed: {stats['failed']}
+                Skipped: {stats['skipped']}
+            """)
+            
+        except Exception as e:
+            logger.error(f"Failed to send ProductHunt promo emails for task {instance.id}: {str(e)}", exc_info=True)

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        /* Поддержка темной темы через prefers-color-scheme */
+        /* Светлая тема (по умолчанию) */
+        body {
+            font-family: Inter, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 600px;
+            margin: 32px auto;
+            padding: 20px;
+            background: #ffffff;
+            border-radius: 32px;
+        }
+        .header {
+            text-align: center;
+            padding: 20px 0;
+            color: #000000;
+        }
+        .task-card {
+            padding: 16px;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            margin-bottom: 16px;
+        }
+        .task-info {
+            margin-bottom: 12px;
+        }
+        .task-stat {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        .task-stat-label {
+            color: #6b7280;
+        }
+        .task-stat-value {
+            font-weight: 600;
+            color: #1f2937;
+            padding-left: 4px;
+        }
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #6b7280;
+            font-size: 14px;
+        }
+        .upvote-button {
+            display: inline-block;
+            background: #DA552F;
+            color: #ffffff;
+            padding: 12px 24px;
+            border-radius: 12px;
+            text-decoration: none;
+            font-size: 16px;
+            font-weight: 600;
+            margin-top: 10px;
+        }
+        a.upvote-button {
+            color: #ffffff!important;
+        }
+        .reward-badge {
+            display: inline-block;
+            background: #10b981;
+            color: #ffffff;
+            padding: 4px 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            margin-top: 8px;
+        }
+        /* Темная тема */
+        @media (prefers-color-scheme: dark) {
+            body {
+                background-color: #18181b !important;
+            }
+            .container {
+                background: #23232a !important;
+                color: #f3f4f6 !important;
+            }
+            .header, .footer {
+                color: #f3f4f6 !important;
+            }
+            .task-card {
+                border: 1px solid #333646 !important;
+                background: #23232a !important;
+            }
+            .task-stat-label {
+                color: #a1a1aa !important;
+            }
+            .task-stat-value {
+                color: #f3f4f6 !important;
+            }
+            .upvote-button {
+                background: #DA552F !important;
+                color: #ffffff !important;
+            }
+            a.upvote-button {
+                color: #ffffff !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>Product Hunt task at upvote.club</h2>
+        </div>
+
+        <div class="task-card">
+            <div class="task-info">
+                <p style="margin-bottom: 16px; color: #1f2937; font-size: 15px;">
+                    You received this email because you have verified your Product Hunt profile at upvote.club
+                </p>
+                <p style="margin-bottom: 16px; color: #1f2937; font-size: 15px;">
+                    Please upvote the task to help the creator reach the top of the Product Hunt queue.
+                </p>
+                <div class="task-stat">
+                    <span class="task-stat-label">Reward:</span>
+                    <span class="task-stat-value">+{{ reward }} points</span>
+                </div>
+            </div>
+            <div style="text-align: center;">
+                <a
+                    href="{{ task_url }}"
+                    class="upvote-button"
+                    target="_blank"
+                >
+                    Upvote Product Hunt Launch
+                </a>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>
+                Don't want to receive these emails? 
+                <a href="{{ unsubscribe_url }}?email={{ user_email }}">unsubscribe</a>
+                <span>from task notifications</span>
+            </p>
+            <p>Upvote.club</p>
+        </div>
+    </div>
+</body>
+</html>

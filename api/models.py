@@ -433,6 +433,11 @@ class Task(models.Model):
         verbose_name='Creation email send error',
         help_text='Last error while sending creation email'
     )
+    promo_email_sent = models.BooleanField(
+        default=False,
+        verbose_name='Promo email sent',
+        help_text='Whether promotional campaign email was sent (for ProductHunt tasks)'
+    )
     is_pinned = models.BooleanField(default=False, verbose_name='Pin at the top', help_text='If checked, this task will always be shown at the top of the list')
     # Показывать ли расширенный вид задачи на фронте
     longview = models.BooleanField(default=False, verbose_name='Long view', help_text='If checked, show extended task view in UI')

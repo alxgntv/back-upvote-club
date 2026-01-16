@@ -390,6 +390,7 @@ class TaskAdmin(admin.ModelAdmin):
         'created_at',
         'email_sent',
         'creation_email_sent',
+        'promo_email_sent',
         'is_pinned'  # фильтр по закреплённым
     )
     
@@ -408,6 +409,8 @@ class TaskAdmin(admin.ModelAdmin):
         'creation_email_sent',
         'creation_email_sent_at',
         'creation_email_send_error',
+        'promo_email_sent',
+        'producthunt_campaign_button',
         'original_price'  # Добавляем original_price в readonly, он будет рассчитываться автоматически
     )
 
@@ -441,7 +444,9 @@ class TaskAdmin(admin.ModelAdmin):
                 'email_send_error',
                 'creation_email_sent',
                 'creation_email_sent_at',
-                'creation_email_send_error'
+                'creation_email_send_error',
+                'promo_email_sent',
+                'producthunt_campaign_button'
             )
         })
     )
@@ -783,6 +788,156 @@ class TaskAdmin(admin.ModelAdmin):
             logger.error(f"[Admin] Error saving Task: {str(e)}")
             messages.error(request, f'Error saving task: {str(e)}')
             raise
+
+    actions = ['send_producthunt_campaign']
+    
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path('<int:task_id>/send-producthunt-campaign/', 
+                 self.admin_site.admin_view(self.send_single_producthunt_campaign_view), 
+                 name='api_task_send_producthunt_campaign'),
+        ]
+        return custom_urls + urls
+    
+    def send_single_producthunt_campaign_view(self, request, task_id):
+        """View для отправки ProductHunt кампании для одного задания"""
+        from django.shortcuts import redirect
+        from django.contrib import messages
+        from .utils.email_utils import send_producthunt_campaign_emails
+        
+        try:
+            task = Task.objects.select_related('social_network').get(pk=task_id)
+            
+            # Проверка что это ProductHunt задание
+            if task.social_network.code.upper() != 'PRODUCTHUNT':
+                messages.error(request, f"Task #{task_id} is not a ProductHunt task")
+                return redirect('admin:api_task_change', task_id)
+            
+            # Проверка что задание активно
+            if task.status != 'ACTIVE':
+                messages.error(request, f"Task #{task_id} is not ACTIVE (current status: {task.status})")
+                return redirect('admin:api_task_change', task_id)
+            
+            # Проверка: уже отправлено?
+            if task.promo_email_sent:
+                messages.warning(request, f"Campaign for task #{task_id} was already sent!")
+                return redirect('admin:api_task_change', task_id)
+            
+            # Отправляем письма
+            stats = send_producthunt_campaign_emails(task)
+            
+            # Проставляем галочку
+            task.promo_email_sent = True
+            task.save(update_fields=['promo_email_sent'])
+            
+            messages.success(
+                request, 
+                f"ProductHunt campaign sent! Sent: {stats['sent']}, Failed: {stats['failed']}, Skipped: {stats['skipped']}"
+            )
+            
+        except Task.DoesNotExist:
+            messages.error(request, f"Task #{task_id} not found")
+        except Exception as e:
+            messages.error(request, f"Error sending campaign: {str(e)}")
+        
+        return redirect('admin:api_task_change', task_id)
+    
+    def producthunt_campaign_button(self, obj):
+        """Кнопка для отправки ProductHunt кампании"""
+        if obj and obj.pk:
+            # Показываем кнопку только для ProductHunt заданий
+            if obj.social_network and obj.social_network.code.upper() == 'PRODUCTHUNT':
+                if obj.promo_email_sent:
+                    return format_html(
+                        '<div style="padding: 10px; background: #d4edda; border: 1px solid #c3e6cb; border-radius: 4px; color: #155724;">'
+                        '✓ Campaign already sent'
+                        '</div>'
+                    )
+                else:
+                    if obj.status == 'ACTIVE':
+                        from django.urls import reverse
+                        url = reverse('admin:api_task_send_producthunt_campaign', args=[obj.pk])
+                        return format_html(
+                            '<a href="{}" class="button" style="background: #DA552F; color: white; padding: 10px 15px; '
+                            'text-decoration: none; border-radius: 4px; display: inline-block; font-weight: bold;" '
+                            'onclick="return confirm(\'Send ProductHunt campaign to all verified users?\');">'
+                            '🚀 Send ProductHunt Campaign'
+                            '</a>',
+                            url
+                        )
+                    else:
+                        return format_html(
+                            '<div style="padding: 10px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; color: #856404;">'
+                            'Task must be ACTIVE to send campaign (current: {})'
+                            '</div>',
+                            obj.status
+                        )
+        return '-'
+    
+    producthunt_campaign_button.short_description = 'ProductHunt Campaign'
+    
+    def send_producthunt_campaign(self, request, queryset):
+        """
+        Отправляет ProductHunt промо письма для выбранных заданий
+        """
+        from .utils.email_utils import send_producthunt_campaign_emails
+        
+        # Фильтруем только ProductHunt задания
+        producthunt_tasks = queryset.filter(
+            social_network__code='PRODUCTHUNT',
+            status='ACTIVE'
+        )
+        
+        if not producthunt_tasks.exists():
+            self.message_user(
+                request,
+                "No active ProductHunt tasks selected",
+                level=messages.WARNING
+            )
+            return
+        
+        total_sent = 0
+        total_failed = 0
+        total_skipped = 0
+        already_sent_count = 0
+        
+        for task in producthunt_tasks:
+            # Проверка: уже отправлено?
+            if task.promo_email_sent:
+                already_sent_count += 1
+                self.message_user(
+                    request,
+                    f"Task #{task.id} - campaign already sent, skipping",
+                    level=messages.WARNING
+                )
+                continue
+            
+            # Отправляем письма
+            stats = send_producthunt_campaign_emails(task)
+            
+            # Проставляем галочку (ЗАЩИТА ОТ ДУБЛЕЙ)
+            task.promo_email_sent = True
+            task.save(update_fields=['promo_email_sent'])
+            
+            total_sent += stats['sent']
+            total_failed += stats['failed']
+            total_skipped += stats['skipped']
+            
+            self.message_user(
+                request,
+                f"Task #{task.id}: Sent {stats['sent']}, Failed {stats['failed']}, Skipped {stats['skipped']}",
+                level=messages.SUCCESS
+            )
+        
+        # Итоговое сообщение
+        self.message_user(
+            request,
+            f"Campaign completed: {total_sent} sent, {total_failed} failed, {total_skipped} skipped, {already_sent_count} already sent",
+            level=messages.SUCCESS
+        )
+    
+    send_producthunt_campaign.short_description = "Promote this task"
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         """Настройка полей для выбора из списка"""

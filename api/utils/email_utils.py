@@ -947,3 +947,191 @@ def send_task_created_email(task):
     except Exception as e:
         logger.error(f"Error sending task created email for task #{task.id}: {str(e)}", exc_info=True)
         return False
+
+def send_producthunt_upvote_request_email(user, task):
+    """
+    Отправляет пользователю письмо с призывом поддержать ProductHunt задание
+    Args:
+        user: User object - пользователь с подтвержденным ProductHunt
+        task: Task object - ProductHunt задание для апвота
+    """
+    try:
+        logger.info(f"""
+            Starting ProductHunt upvote request email preparation:
+            User: {user.username}
+            Task ID: {task.id}
+            Task URL: {task.post_url}
+        """)
+
+        # Получаем email пользователя из Firebase
+        user_email = get_firebase_email(user.username)
+        if not user_email:
+            logger.error(f"Could not get Firebase email for user {user.username}")
+            return False
+
+        # Получаем или создаем подписку для отписки
+        unsubscribe_url = None
+        try:
+            subscription_type = EmailSubscriptionType.objects.get(name='new_task')
+            subscription, _ = UserEmailSubscription.objects.get_or_create(
+                user=user,
+                subscription_type=subscription_type,
+                defaults={'is_subscribed': True}
+            )
+            unsubscribe_url = f"{settings.SITE_URL}/api/unsubscribe/{subscription.unsubscribe_token}/"
+            logger.info(f"Unsubscribe URL for new_task: {unsubscribe_url}")
+        except EmailSubscriptionType.DoesNotExist:
+            logger.warning(f"EmailSubscriptionType 'new_task' not found for user {user.username}")
+            unsubscribe_url = f"{settings.SITE_URL}/settings"
+        except Exception as e:
+            logger.warning(f"Could not generate unsubscribe URL for user {user.username}: {str(e)}")
+            unsubscribe_url = f"{settings.SITE_URL}/settings"
+
+        # Формируем ссылку на задание с параметрами taskid и userid
+        base_url = task.post_url
+        separator = '&' if '?' in base_url else '?'
+        task_url = f"{base_url}{separator}taskid={task.id}&userid={user.id}"
+        
+        # Вычисляем награду (половина от цены за действие)
+        reward = task.original_price / task.actions_required / 2
+
+        # Формируем context для html шаблона
+        context = {
+            'username': user.username,
+            'task': task,
+            'task_url': task_url,
+            'reward': int(reward),
+            'user_email': user_email,
+            'unsubscribe_url': unsubscribe_url
+        }
+        
+        logger.info(f"Rendering HTML email template for ProductHunt upvote request (user={user.username}, task_id={task.id})")
+        html_content = render_to_string('email/producthunt_upvote_request.html', context)
+        logger.info(f"HTML content rendered for ProductHunt upvote request email, length: {len(html_content)} chars")
+
+        email_service = EmailService()
+        result = email_service.send_email(
+            to_email=user_email,
+            subject='Help us launch on Product Hunt - Earn points!',
+            html_content=html_content,
+            unsubscribe_url=unsubscribe_url,
+            bcc_email='yesupvote@gmail.com'
+        )
+
+        if result:
+            logger.info(f"Successfully sent ProductHunt upvote request email to {user_email} (user: {user.username}, task: {task.id})")
+        else:
+            logger.error(f"Failed to send ProductHunt upvote request email to {user_email} (user: {user.username}, task: {task.id})")
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error sending ProductHunt upvote request email (user: {user.username}, task: {task.id}): {str(e)}", exc_info=True)
+        return False
+
+def send_producthunt_campaign_emails(task):
+    """
+    Отправляет промо письма всем пользователям с подтвержденным ProductHunt профилем
+    Вызывается один раз при создании ProductHunt задания
+    Args:
+        task: Task object - ProductHunt задание
+    Returns:
+        dict: статистика отправки {'sent': int, 'failed': int, 'skipped': int}
+    """
+    try:
+        logger.info(f"Starting ProductHunt campaign for task {task.id}")
+        
+        # Импортируем здесь чтобы избежать циклических зависимостей
+        from ..models import SocialNetwork, UserSocialProfile, EmailSubscriptionType, UserEmailSubscription
+        
+        # Проверяем что это ProductHunt задание
+        if task.social_network.code.upper() != 'PRODUCTHUNT':
+            logger.warning(f"Task {task.id} is not a ProductHunt task, skipping campaign")
+            return {'sent': 0, 'failed': 0, 'skipped': 0}
+        
+        # Получаем ProductHunt соцсеть
+        try:
+            producthunt_network = SocialNetwork.objects.get(code='PRODUCTHUNT')
+        except SocialNetwork.DoesNotExist:
+            logger.error('ProductHunt social network not found in database')
+            return {'sent': 0, 'failed': 0, 'skipped': 0}
+        
+        # Получаем всех пользователей с подтвержденным ProductHunt профилем
+        verified_profiles = UserSocialProfile.objects.filter(
+            social_network=producthunt_network,
+            verification_status='VERIFIED'
+        ).select_related('user')
+        
+        logger.info(f"Found {verified_profiles.count()} verified ProductHunt profiles")
+        
+        sent_count = 0
+        failed_count = 0
+        skipped_count = 0
+        processed_users = set()  # Отслеживаем обработанных пользователей (защита от дублей)
+        
+        for profile in verified_profiles:
+            try:
+                user = profile.user
+                
+                # Пропускаем дубликаты (если у пользователя несколько ProductHunt профилей)
+                if user.id in processed_users:
+                    continue
+                processed_users.add(user.id)
+                
+                # Пропускаем автора задания
+                if user.id == task.creator.id:
+                    logger.info(f"Skipping task creator: {user.username}")
+                    skipped_count += 1
+                    continue
+                
+                # Проверяем что пользователь еще не выполнял это задание
+                if task.taskcompletion_set.filter(user=user).exists():
+                    logger.info(f"User {user.username} already completed this task")
+                    skipped_count += 1
+                    continue
+                
+                # Проверяем подписку пользователя
+                try:
+                    subscription_type = EmailSubscriptionType.objects.get(name='new_task')
+                    subscription = UserEmailSubscription.objects.get(
+                        user=user,
+                        subscription_type=subscription_type
+                    )
+                    if not subscription.is_subscribed:
+                        logger.info(f"User {user.username} unsubscribed from new_task emails")
+                        skipped_count += 1
+                        continue
+                except (EmailSubscriptionType.DoesNotExist, UserEmailSubscription.DoesNotExist):
+                    # Если подписки еще нет, значит пользователь не отписывался
+                    pass
+                
+                # Отправляем email
+                if send_producthunt_upvote_request_email(user, task):
+                    sent_count += 1
+                    logger.info(f"Sent ProductHunt campaign email to {user.username}")
+                else:
+                    failed_count += 1
+                    logger.warning(f"Failed to send ProductHunt campaign email to {user.username}")
+                
+                # Небольшая задержка между отправками
+                time.sleep(1)
+                
+            except Exception as e:
+                failed_count += 1
+                logger.error(f"Error sending campaign email to {profile.user.username}: {str(e)}", exc_info=True)
+        
+        total_unique_users = len(processed_users)
+        
+        logger.info(f"""
+            ProductHunt campaign completed for task {task.id}:
+            Total unique users processed: {total_unique_users}
+            Sent: {sent_count}
+            Failed: {failed_count}
+            Skipped: {skipped_count}
+        """)
+        
+        return {'sent': sent_count, 'failed': failed_count, 'skipped': skipped_count}
+        
+    except Exception as e:
+        logger.error(f"Error in ProductHunt campaign for task {task.id}: {str(e)}", exc_info=True)
+        return {'sent': 0, 'failed': 0, 'skipped': 0}
