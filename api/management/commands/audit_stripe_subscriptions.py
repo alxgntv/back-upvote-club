@@ -36,12 +36,15 @@ class Command(BaseCommand):
         try:
             stripe.api_key = settings.STRIPE_SECRET_KEY
             
-            # Step 1: Get all active subscriptions from Stripe
-            self.stdout.write('Step 1: Fetching active subscriptions from Stripe...')
-            active_stripe_emails = self.get_active_stripe_subscriptions()
+            # Step 1: Get all active and trialing subscriptions from Stripe
+            self.stdout.write('Step 1: Fetching subscriptions from Stripe (active + trialing)...')
+            stripe_subscriptions = self.get_active_stripe_subscriptions()
             
-            logger.info(f"Found {len(active_stripe_emails)} active subscriptions in Stripe")
-            self.stdout.write(self.style.SUCCESS(f'✓ Found {len(active_stripe_emails)} active subscriptions in Stripe'))
+            active_count = sum(1 for status in stripe_subscriptions.values() if status == 'active')
+            trialing_count = sum(1 for status in stripe_subscriptions.values() if status == 'trialing')
+            
+            logger.info(f"Found {len(stripe_subscriptions)} subscriptions in Stripe ({active_count} active + {trialing_count} trialing)")
+            self.stdout.write(self.style.SUCCESS(f'✓ Found {len(stripe_subscriptions)} subscriptions ({active_count} active + {trialing_count} trialing)'))
             
             # Step 2: Get all users from database and their Firebase emails
             self.stdout.write('\nStep 2: Fetching users from database and Firebase...')
@@ -52,10 +55,10 @@ class Command(BaseCommand):
             
             # Step 3: Compare and update
             self.stdout.write('\nStep 3: Comparing and updating user statuses...')
-            stats = self.sync_user_statuses(user_data, active_stripe_emails, dry_run)
+            stats = self.sync_user_statuses(user_data, stripe_subscriptions, dry_run)
             
             # Step 4: Print summary
-            self.print_summary(stats, active_stripe_emails, user_data, dry_run)
+            self.print_summary(stats, stripe_subscriptions, user_data, dry_run)
             
         except Exception as e:
             error_msg = f"Error during subscription audit: {str(e)}"
@@ -63,11 +66,12 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR(f'✗ {error_msg}'))
 
     def get_active_stripe_subscriptions(self):
-        """Get all active subscriptions from Stripe and return set of emails"""
-        active_emails = set()
+        """Get all active and trialing subscriptions from Stripe and return dict of emails with statuses"""
+        stripe_subscriptions = {}  # {email: status}
         
         try:
             # Get all active and trialing subscriptions
+            # past_due and canceled are NOT included - those users should be downgraded to FREE
             active_subscriptions = stripe.Subscription.list(
                 status='active',
                 limit=100
@@ -77,32 +81,47 @@ class Command(BaseCommand):
                 limit=100
             )
             
-            # Combine both lists
-            subscriptions = list(active_subscriptions.auto_paging_iter())
-            subscriptions.extend(list(trialing_subscriptions.auto_paging_iter()))
-            
-            logger.info(f"Found {len(subscriptions)} subscriptions (active + trialing) in Stripe")
-            
-            for subscription in subscriptions:
+            # Process active subscriptions
+            active_list = list(active_subscriptions.auto_paging_iter())
+            for subscription in active_list:
                 try:
                     customer_id = subscription.customer
                     customer = stripe.Customer.retrieve(customer_id)
                     email = customer.email
                     
                     if email:
-                        active_emails.add(email.lower())
-                        logger.info(f"Stripe active subscription: {email} (Customer: {customer_id})")
+                        stripe_subscriptions[email.lower()] = 'active'
+                        logger.info(f"Stripe ACTIVE subscription: {email} (Customer: {customer_id})")
                     else:
                         logger.warning(f"Stripe subscription without email: Customer {customer_id}")
                         
                 except Exception as e:
                     logger.error(f"Error processing Stripe subscription {subscription.id}: {str(e)}")
+            
+            # Process trialing subscriptions
+            trialing_list = list(trialing_subscriptions.auto_paging_iter())
+            for subscription in trialing_list:
+                try:
+                    customer_id = subscription.customer
+                    customer = stripe.Customer.retrieve(customer_id)
+                    email = customer.email
+                    
+                    if email:
+                        stripe_subscriptions[email.lower()] = 'trialing'
+                        logger.info(f"Stripe TRIALING subscription: {email} (Customer: {customer_id})")
+                    else:
+                        logger.warning(f"Stripe subscription without email: Customer {customer_id}")
+                        
+                except Exception as e:
+                    logger.error(f"Error processing Stripe subscription {subscription.id}: {str(e)}")
+            
+            logger.info(f"Total subscriptions: {len(stripe_subscriptions)} ({len(active_list)} active + {len(trialing_list)} trialing)")
                     
         except Exception as e:
             logger.error(f"Error fetching Stripe subscriptions: {str(e)}")
             raise
             
-        return active_emails
+        return stripe_subscriptions
 
     def get_users_with_firebase_emails(self):
         """Get all users from database with their Firebase emails"""
@@ -151,10 +170,12 @@ class Command(BaseCommand):
         self.stdout.write(f'\n  Completed processing {processed} users')
         return user_data
 
-    def sync_user_statuses(self, user_data, active_stripe_emails, dry_run):
+    def sync_user_statuses(self, user_data, stripe_subscriptions, dry_run):
         """Compare users with Stripe subscriptions and update statuses"""
         stats = {
             'kept_paid': 0,
+            'kept_active': 0,
+            'kept_trialing': 0,
             'downgraded_to_free': 0,
             'already_free': 0,
             'errors': 0,
@@ -175,14 +196,21 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.WARNING(f'  ⚠ {firebase_uid}: No email in Firebase'))
                 continue
             
-            # Check if user has active Stripe subscription
-            has_active_subscription = email in active_stripe_emails
+            # Check if user has active or trialing Stripe subscription
+            subscription_status = stripe_subscriptions.get(email)
             
-            if has_active_subscription:
-                # User has active subscription - keep current status
+            if subscription_status:
+                # User has active or trialing subscription - keep current status
                 stats['kept_paid'] += 1
-                logger.info(f"User {email} (UID: {firebase_uid}): Has active subscription, keeping status {current_status}")
-                self.stdout.write(self.style.SUCCESS(f'  ✓ {email}: Active subscription, status={current_status}'))
+                
+                if subscription_status == 'active':
+                    stats['kept_active'] += 1
+                    logger.info(f"User {email} (UID: {firebase_uid}): Has ACTIVE subscription, keeping status {current_status}")
+                    self.stdout.write(self.style.SUCCESS(f'  ✓ {email}: Active subscription, status={current_status}'))
+                elif subscription_status == 'trialing':
+                    stats['kept_trialing'] += 1
+                    logger.info(f"User {email} (UID: {firebase_uid}): Has TRIALING subscription, keeping status {current_status}")
+                    self.stdout.write(self.style.SUCCESS(f'  ✓ {email}: Trialing subscription, status={current_status}'))
                 
             else:
                 # User has NO active subscription
@@ -210,20 +238,27 @@ class Command(BaseCommand):
         
         return stats
 
-    def print_summary(self, stats, active_stripe_emails, user_data, dry_run):
+    def print_summary(self, stats, stripe_subscriptions, user_data, dry_run):
         """Print summary of the audit"""
         self.stdout.write('\n' + '═' * 60)
         self.stdout.write(self.style.SUCCESS('AUDIT SUMMARY'))
         self.stdout.write('═' * 60)
         
+        active_count = sum(1 for status in stripe_subscriptions.values() if status == 'active')
+        trialing_count = sum(1 for status in stripe_subscriptions.values() if status == 'trialing')
+        
         self.stdout.write(f'\nStripe Statistics:')
-        self.stdout.write(f'  • Active subscriptions in Stripe: {len(active_stripe_emails)}')
+        self.stdout.write(f'  • Total subscriptions in Stripe: {len(stripe_subscriptions)}')
+        self.stdout.write(f'    - Active: {active_count}')
+        self.stdout.write(f'    - Trialing: {trialing_count}')
         
         self.stdout.write(f'\nDatabase Statistics:')
         self.stdout.write(f'  • Total users in database: {len(user_data)}')
         
         self.stdout.write(f'\nSync Results:')
-        self.stdout.write(self.style.SUCCESS(f'  ✓ Users with active subscriptions (kept): {stats["kept_paid"]}'))
+        self.stdout.write(self.style.SUCCESS(f'  ✓ Users with valid subscriptions (kept): {stats["kept_paid"]}'))
+        self.stdout.write(f'    - Active subscriptions: {stats["kept_active"]}')
+        self.stdout.write(f'    - Trialing subscriptions: {stats["kept_trialing"]}')
         self.stdout.write(f'  • Users already FREE: {stats["already_free"]}')
         
         if stats['downgraded_to_free'] > 0:
@@ -251,9 +286,9 @@ class Command(BaseCommand):
         
         logger.info(f"""
             Audit completed:
-            - Active Stripe subscriptions: {len(active_stripe_emails)}
-            - Total users: {len(user_data)}
-            - Kept paid: {stats['kept_paid']}
+            - Total Stripe subscriptions: {len(stripe_subscriptions)} ({active_count} active + {trialing_count} trialing)
+            - Total users checked: {len(user_data)}
+            - Kept paid: {stats['kept_paid']} (active: {stats['kept_active']}, trialing: {stats['kept_trialing']})
             - Downgraded to FREE: {stats['downgraded_to_free']}
             - Already FREE: {stats['already_free']}
             - No email: {stats['no_email']}
