@@ -11,7 +11,6 @@ class Command(BaseCommand):
     # Pricing structure:
     # - LIKE: $0.45 for all social networks
     # - UPVOTE (except ProductHunt): $0.90
-    # - UPVOTE (ProductHunt only): Special case handled separately
     # - FOLLOW: $0.90 for all social networks
     # - COMMENT: $0.90 for all social networks
     # - SAVE: $0.90 for all social networks
@@ -93,137 +92,136 @@ class Command(BaseCommand):
 
     DEFAULT_QUANTITY_STEPS = [2, 3, 4, 5, 6, 8, 10]
 
-    [
-      {
-        "emoji": "🔢",
-        "title": "Choose Your Quantity",
-        "text": "Pick how many {ACTION_NAME}s you want for your {SOCIAL_NETWORK} content. Select any amount that fits your goals."
-      },
-      {
-        "emoji": "✉️",
-        "title": "Quick Sign Up",
-        "text": "Create an account using Email or Google in seconds. We never ask for social network passwords or logins."
-      },
-      {
-        "emoji": "💳",
-        "title": "Secure Payment",
-        "text": "Pay safely for your order. All transactions are encrypted for your peace of mind."
-      },
-      {
-        "emoji": "📝",
-        "title": "Task Created Instantly",
-        "text": "Right after payment, your task goes live for the community to complete. Just submit your public post or profile link."
-      },
-      {
-        "emoji": "🕒",
-        "title": "Community Delivers in 24 Hours",
-        "text": "Real people complete your {ACTION_NAME}s—usually within 1-24 hours. No bots. No automation."
-      },
-      {
-        "emoji": "🚀",
-        "title": "Unlimited Growth Campaigns",
-        "text": "Founders and creators can launch unlimited tasks. Run as many engagement campaigns as you need."
-      },
-      {
-        "emoji": "🌟",
-        "title": "Golden Hour Growth Technique",
-        "text": "For maximum impact, boost your {SOCIAL_NETWORK} post right after publishing with about 20 likes, 20 comments, 20 saves (bookmarks), and 20 reposts (retweets). This early activity can significantly increase your post’s visibility and often leads to better results."
-      }
-    ]
-    [
-      {
-        "q": "What makes Upvote Club different from typical 'buy engagement' sites?",
-        "a": "Upvote Club is a community-powered platform. Actions come only from real people—not bots or automation. We focus on transparency, non-drop engagement, and strict moderation for quality."
-      },
-      {
-        "q": "How does Upvote Club work?",
-        "a": "You create a task requesting {ACTION_NAME}s on {SOCIAL_NETWORK}. Community members complete your task to earn points. Everyone helps each other grow in a real way."
-      },
-      {
-        "q": "Is it safe to buy {ACTION_NAME}s on {SOCIAL_NETWORK} here?",
-        "a": "Our system is designed to be safe by using only real users and never asking for social network logins. We have strong moderation to reduce risk."
-      },
-      {
-        "q": "Do I need to give my {SOCIAL_NETWORK} password?",
-        "a": "Never. Upvote Club will never ask for any social network password or login. You just provide a public link to your content."
-      },
-      {
-        "q": "How quickly will I receive my {ACTION_NAME}s?",
-        "a": "Most tasks start soon after payment and typically complete within 1-24 hours, depending on the quantity."
-      },
-      {
-        "q": "Is my information confidential?",
-        "a": "Yes. Only your public {SOCIAL_NETWORK} link is visible to members who complete your task. Your account info and order remain private."
-      },
-      {
-        "q": "What is non-drop engagement?",
-        "a": "It means the {ACTION_NAME}s come from real people and are unlikely to disappear later, unlike fake engagement from bots."
-      },
-      {
-        "q": "Who completes the actions on my posts?",
-        "a": "Actions are completed by real members of the Upvote Club community who earn points for helping others."
-      },
-      {
-        "q": "What moderation do you have?",
-        "a": "We review all activity. Bot-like or suspicious accounts are blocked. We focus on quality engagement and a trustworthy experience."
-      },
-      {
-        "q": "How do points and tasks work?",
-        "a": "You spend points to request actions. Community members earn points by completing tasks. This keeps engagement authentic and fair."
-      },
-      {
-        "q": "Can I see exactly who did each {ACTION_NAME}?",
-        "a": "For privacy, we do not share user identities. You will see real engagement show up on your {SOCIAL_NETWORK} content."
-      },
-      {
-        "q": "What should I do if I have an issue with my order?",
-        "a": "Contact our support team. We’ll review your case and work together on a fair solution."
-      },
-      {
-        "q": "Do you support actions like reposts (retweets) or saves (bookmarks)?",
-        "a": "Yes! You can create tasks for likes, comments, reposts (retweets), saves (bookmarks), followers, and more on {SOCIAL_NETWORK}."
-      },
-      {
-        "q": "What's the best growth tactic for early exposure?",
-        "a": "Use the Golden Hour Growth Technique—right after your post goes live, boost it with ~20 likes, 20 comments, 20 saves (bookmarks), and 20 reposts (retweets) to increase early momentum."
-      },
-      {
-        "q": "How do I scale my social network growth on Upvote Club?",
-        "a": "There’s no limit. Founders, indie makers, and marketers can create unlimited campaigns to drive growth on {SOCIAL_NETWORK}."
-      },
-      {
-        "q": "Will Upvote Club’s engagement look natural on my content?",
-        "a": "Yes. Since all actions are from real people with unique profiles, it blends in naturally with organic activity."
-      },
-      {
-        "q": "Is using Upvote Club risky for my {SOCIAL_NETWORK} account?",
-        "a": "Engagement comes from real users, not automation. No online service is risk-free, but our human-first approach is designed to minimize issues."
-      },
-      {
-        "q": "What ICP (ideal customer) is Upvote Club designed for?",
-        "a": "Upvote Club serves founders, indie makers, marketers, engineers, designers, and small business owners focused on real growth."
-      },
-      {
-        "q": "Are refunds available?",
-        "a": "If there’s a problem, reach out to support first. We’ll investigate and help resolve any concerns."
-      },
-      {
-        "q": "How soon can I create another campaign?",
-        "a": "Whenever you want. Upvote Club allows you to run multiple tasks or campaigns at the same time—no limits."
-      },
-      {
-        "q": "What keywords can I use to find your service?",
-        "a": "You can search: buy {ACTION_NAME} {TARGET_KEYWORD}, real {ACTION_NAME}s {SOCIAL_NETWORK}, Upvote Club {ACTION_NAME}, non-drop {ACTION_NAME} for {SOCIAL_NETWORK}."
-      },
-      {
-        "q": "Can I combine different actions for stronger impact?",
-        "a": "Definitely. Mix likes, comments, reposts (retweets), and saves (bookmarks) in one campaign for a higher visibility boost."
-      }
+    # How It Works content (will be customized per landing)
+    HOW_IT_WORKS = [
+        {
+            "emoji": "🔢",
+            "title": "Choose Your Quantity",
+            "text": "Pick how many items you want for your content. Select any amount that fits your goals."
+        },
+        {
+            "emoji": "✉️",
+            "title": "Quick Sign Up",
+            "text": "Create an account using Email or Google in seconds. We never ask for social network passwords or logins."
+        },
+        {
+            "emoji": "💳",
+            "title": "Secure Payment",
+            "text": "Pay safely for your order. All transactions are encrypted for your peace of mind."
+        },
+        {
+            "emoji": "📝",
+            "title": "Task Created Instantly",
+            "text": "Right after payment, your task goes live for the community to complete. Just submit your public post or profile link."
+        },
+        {
+            "emoji": "🕒",
+            "title": "Community Delivers in 24 Hours",
+            "text": "Real people complete your actions—usually within 1-24 hours. No bots. No automation."
+        },
+        {
+            "emoji": "🚀",
+            "title": "Unlimited Growth Campaigns",
+            "text": "Founders and creators can launch unlimited tasks. Run as many engagement campaigns as you need."
+        },
+        {
+            "emoji": "🌟",
+            "title": "Golden Hour Growth Technique",
+            "text": "For maximum impact, boost your post right after publishing with about 20 likes, 20 comments, 20 saves, and 20 reposts. This early activity can significantly increase your post's visibility and often leads to better results."
+        }
     ]
 
-    def get_faq_for_network(self, network_code):
-        """Get FAQ specific to social network"""
-        return self.FAQ_TEMPLATES.get(network_code, self.FAQ_TEMPLATES['DEFAULT'])
+    # FAQ content (universal for all networks)
+    FAQ_TEMPLATES = [
+        {
+            "q": "What makes Upvote Club different from typical 'buy engagement' sites?",
+            "a": "Upvote Club is a community-powered platform. Actions come only from real people—not bots or automation. We focus on transparency, non-drop engagement, and strict moderation for quality."
+        },
+        {
+            "q": "How does Upvote Club work?",
+            "a": "You create a task requesting actions. Community members complete your task to earn points. Everyone helps each other grow in a real way."
+        },
+        {
+            "q": "Is it safe to buy engagement here?",
+            "a": "Our system is designed to be safe by using only real users and never asking for social network logins. We have strong moderation to reduce risk."
+        },
+        {
+            "q": "Do I need to give my password?",
+            "a": "Never. Upvote Club will never ask for any social network password or login. You just provide a public link to your content."
+        },
+        {
+            "q": "How quickly will I receive my order?",
+            "a": "Most tasks start soon after payment and typically complete within 1-24 hours, depending on the quantity."
+        },
+        {
+            "q": "Is my information confidential?",
+            "a": "Yes. Only your public link is visible to members who complete your task. Your account info and order remain private."
+        },
+        {
+            "q": "What is non-drop engagement?",
+            "a": "It means the actions come from real people and are unlikely to disappear later, unlike fake engagement from bots."
+        },
+        {
+            "q": "Who completes the actions on my posts?",
+            "a": "Actions are completed by real members of the Upvote Club community who earn points for helping others."
+        },
+        {
+            "q": "What moderation do you have?",
+            "a": "We review all activity. Bot-like or suspicious accounts are blocked. We focus on quality engagement and a trustworthy experience."
+        },
+        {
+            "q": "How do points and tasks work?",
+            "a": "You spend points to request actions. Community members earn points by completing tasks. This keeps engagement authentic and fair."
+        },
+        {
+            "q": "Can I see exactly who did each action?",
+            "a": "For privacy, we do not share user identities. You will see real engagement show up on your content."
+        },
+        {
+            "q": "What should I do if I have an issue with my order?",
+            "a": "Contact our support team. We'll review your case and work together on a fair solution."
+        },
+        {
+            "q": "Do you support actions like reposts or saves?",
+            "a": "Yes! You can create tasks for likes, comments, reposts, saves, followers, and more."
+        },
+        {
+            "q": "What's the best growth tactic for early exposure?",
+            "a": "Use the Golden Hour Growth Technique—right after your post goes live, boost it with ~20 likes, 20 comments, 20 saves, and 20 reposts to increase early momentum."
+        },
+        {
+            "q": "How do I scale my social network growth on Upvote Club?",
+            "a": "There's no limit. Founders, indie makers, and marketers can create unlimited campaigns to drive growth."
+        },
+        {
+            "q": "Will Upvote Club's engagement look natural on my content?",
+            "a": "Yes. Since all actions are from real people with unique profiles, it blends in naturally with organic activity."
+        },
+        {
+            "q": "Is using Upvote Club risky for my account?",
+            "a": "Engagement comes from real users, not automation. No online service is risk-free, but our human-first approach is designed to minimize issues."
+        },
+        {
+            "q": "What ICP (ideal customer) is Upvote Club designed for?",
+            "a": "Upvote Club serves founders, indie makers, marketers, engineers, designers, and small business owners focused on real growth."
+        },
+        {
+            "q": "Are refunds available?",
+            "a": "If there's a problem, reach out to support first. We'll investigate and help resolve any concerns."
+        },
+        {
+            "q": "How soon can I create another campaign?",
+            "a": "Whenever you want. Upvote Club allows you to run multiple tasks or campaigns at the same time—no limits."
+        },
+        {
+            "q": "What keywords can I use to find your service?",
+            "a": "You can search: buy engagement, real social growth, Upvote Club, non-drop engagement services."
+        },
+        {
+            "q": "Can I combine different actions for stronger impact?",
+            "a": "Definitely. Mix likes, comments, reposts, and saves in one campaign for a higher visibility boost."
+        }
+    ]
 
     def generate_meta_data(self, landing):
         """
@@ -282,10 +280,9 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(f"  ✓ How It Works: {len(self.HOW_IT_WORKS)} items"))
             
             # Set FAQ
-            faq = self.get_faq_for_network(network_code)
             landing.faq_section_title = "Frequently Asked Questions"
-            landing.faq = faq
-            self.stdout.write(self.style.SUCCESS(f"  ✓ FAQ: {len(faq)} questions"))
+            landing.faq = self.FAQ_TEMPLATES
+            self.stdout.write(self.style.SUCCESS(f"  ✓ FAQ: {len(self.FAQ_TEMPLATES)} questions"))
             
             # Set Reviews section title
             landing.reviews_section_title = "What Our Customers Say"
