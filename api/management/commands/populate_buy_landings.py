@@ -93,130 +93,159 @@ class Command(BaseCommand):
 
     DEFAULT_QUANTITY_STEPS = [2, 3, 4, 5, 6, 8, 10]
 
-    # How It Works content
-    HOW_IT_WORKS = [
-        {
-            "emoji": "🧗‍♂️",
-            "title": "Real people, genuine engagement",
-            "text": "We are a community-driven platform where real people support each other's growth through authentic interactions."
-        },
-        {
-            "emoji": "👥",
-            "title": "Trusted community since 2020",
-            "text": "We maintain a safe and clean environment where community members exchange real engagement from verified accounts."
-        },
-        {
-            "emoji": "🤖",
-            "title": "Strict anti-bot protection",
-            "text": "We actively block all bot-like accounts to ensure authentic engagement quality."
-        },
-        {
-            "emoji": "🌐",
-            "title": "Global community, diverse interests",
-            "text": "Our worldwide network includes users from various niches and industries, ensuring relevant engagement for your content."
-        },
-        {
-            "emoji": "🛡️",
-            "title": "Safe & Secure",
-            "text": "No passwords required — no risk to account integrity"
-        }
+    [
+      {
+        "emoji": "🔢",
+        "title": "Choose Your Quantity",
+        "text": "Pick how many {ACTION_NAME}s you want for your {SOCIAL_NETWORK} content. Select any amount that fits your goals."
+      },
+      {
+        "emoji": "✉️",
+        "title": "Quick Sign Up",
+        "text": "Create an account using Email or Google in seconds. We never ask for social network passwords or logins."
+      },
+      {
+        "emoji": "💳",
+        "title": "Secure Payment",
+        "text": "Pay safely for your order. All transactions are encrypted for your peace of mind."
+      },
+      {
+        "emoji": "📝",
+        "title": "Task Created Instantly",
+        "text": "Right after payment, your task goes live for the community to complete. Just submit your public post or profile link."
+      },
+      {
+        "emoji": "🕒",
+        "title": "Community Delivers in 24 Hours",
+        "text": "Real people complete your {ACTION_NAME}s—usually within 1-24 hours. No bots. No automation."
+      },
+      {
+        "emoji": "🚀",
+        "title": "Unlimited Growth Campaigns",
+        "text": "Founders and creators can launch unlimited tasks. Run as many engagement campaigns as you need."
+      },
+      {
+        "emoji": "🌟",
+        "title": "Golden Hour Growth Technique",
+        "text": "For maximum impact, boost your {SOCIAL_NETWORK} post right after publishing with about 20 likes, 20 comments, 20 saves (bookmarks), and 20 reposts (retweets). This early activity can significantly increase your post’s visibility and often leads to better results."
+      }
     ]
-
-    # FAQ content per social network
-    FAQ_TEMPLATES = {
-        'TWITTER': [
-            {
-                "q": "How long does delivery take?",
-                "a": "Delivery typically takes 1-24 hours depending on the quantity ordered. Smaller orders complete faster, while larger orders may take up to 24 hours."
-            },
-            {
-                "q": "Is it safe for my Twitter account?",
-                "a": "Yes, absolutely safe. We use real community members with verified Twitter accounts. No bots, no passwords required."
-            },
-            {
-                "q": "Will the engagement look natural?",
-                "a": "Yes! All engagement comes from real people in our community, making it completely organic and natural."
-            },
-            {
-                "q": "Can I get a refund?",
-                "a": "Yes, we offer refunds if the service doesn't meet your expectations or if we can't deliver within the promised timeframe."
-            },
-            {
-                "q": "Do I need to provide my password?",
-                "a": "No, never! We only need the public URL to your post. We never ask for passwords or login credentials."
-            }
-        ],
-        'REDDIT': [
-            {
-                "q": "How quickly will I receive Reddit upvotes?",
-                "a": "Most orders are completed within 2-12 hours. The speed depends on your order size and current community availability."
-            },
-            {
-                "q": "Will Reddit detect this as spam?",
-                "a": "No, all upvotes come from real Reddit users with aged accounts and genuine activity history. It's completely safe."
-            },
-            {
-                "q": "Can I target specific subreddits?",
-                "a": "Yes, our community members participate in various subreddits. Just provide the post URL and we'll handle the rest."
-            },
-            {
-                "q": "What if my post gets downvoted?",
-                "a": "We only provide upvotes from real users. Natural Reddit activity may include some downvotes, but our service focuses on positive engagement."
-            }
-        ],
-        'PRODUCTHUNT': [
-            {
-                "q": "How does ProductHunt upvoting work?",
-                "a": "Our community members with verified ProductHunt accounts will upvote your product. All votes are from real users."
-            },
-            {
-                "q": "Can this help me get to #1 Product of the Day?",
-                "a": "While we provide real upvotes, ProductHunt ranking depends on many factors. Our service gives you a strong foundation and initial momentum."
-            },
-            {
-                "q": "Is it against ProductHunt rules?",
-                "a": "We provide real engagement from genuine users. Our community members discover and support products they find interesting."
-            },
-            {
-                "q": "How long does delivery take?",
-                "a": "Delivery is typically completed within 4-12 hours, but we recommend ordering early on launch day for best results."
-            }
-        ],
-        'DEFAULT': [
-            {
-                "q": "How long does delivery take?",
-                "a": "Delivery typically takes 1-24 hours depending on quantity and platform. Smaller orders usually complete within a few hours."
-            },
-            {
-                "q": "Is this safe for my account?",
-                "a": "Yes, completely safe. We use only real community members with verified accounts. No bots, no passwords required."
-            },
-            {
-                "q": "Can I get a refund?",
-                "a": "Yes, we offer refunds if we can't deliver the service as promised or if you're not satisfied with the results."
-            },
-            {
-                "q": "Do you need my password?",
-                "a": "Never! We only need the public URL to your content. We never ask for passwords or private information."
-            }
-        ]
-    }
+    [
+      {
+        "q": "What makes Upvote Club different from typical 'buy engagement' sites?",
+        "a": "Upvote Club is a community-powered platform. Actions come only from real people—not bots or automation. We focus on transparency, non-drop engagement, and strict moderation for quality."
+      },
+      {
+        "q": "How does Upvote Club work?",
+        "a": "You create a task requesting {ACTION_NAME}s on {SOCIAL_NETWORK}. Community members complete your task to earn points. Everyone helps each other grow in a real way."
+      },
+      {
+        "q": "Is it safe to buy {ACTION_NAME}s on {SOCIAL_NETWORK} here?",
+        "a": "Our system is designed to be safe by using only real users and never asking for social network logins. We have strong moderation to reduce risk."
+      },
+      {
+        "q": "Do I need to give my {SOCIAL_NETWORK} password?",
+        "a": "Never. Upvote Club will never ask for any social network password or login. You just provide a public link to your content."
+      },
+      {
+        "q": "How quickly will I receive my {ACTION_NAME}s?",
+        "a": "Most tasks start soon after payment and typically complete within 1-24 hours, depending on the quantity."
+      },
+      {
+        "q": "Is my information confidential?",
+        "a": "Yes. Only your public {SOCIAL_NETWORK} link is visible to members who complete your task. Your account info and order remain private."
+      },
+      {
+        "q": "What is non-drop engagement?",
+        "a": "It means the {ACTION_NAME}s come from real people and are unlikely to disappear later, unlike fake engagement from bots."
+      },
+      {
+        "q": "Who completes the actions on my posts?",
+        "a": "Actions are completed by real members of the Upvote Club community who earn points for helping others."
+      },
+      {
+        "q": "What moderation do you have?",
+        "a": "We review all activity. Bot-like or suspicious accounts are blocked. We focus on quality engagement and a trustworthy experience."
+      },
+      {
+        "q": "How do points and tasks work?",
+        "a": "You spend points to request actions. Community members earn points by completing tasks. This keeps engagement authentic and fair."
+      },
+      {
+        "q": "Can I see exactly who did each {ACTION_NAME}?",
+        "a": "For privacy, we do not share user identities. You will see real engagement show up on your {SOCIAL_NETWORK} content."
+      },
+      {
+        "q": "What should I do if I have an issue with my order?",
+        "a": "Contact our support team. We’ll review your case and work together on a fair solution."
+      },
+      {
+        "q": "Do you support actions like reposts (retweets) or saves (bookmarks)?",
+        "a": "Yes! You can create tasks for likes, comments, reposts (retweets), saves (bookmarks), followers, and more on {SOCIAL_NETWORK}."
+      },
+      {
+        "q": "What's the best growth tactic for early exposure?",
+        "a": "Use the Golden Hour Growth Technique—right after your post goes live, boost it with ~20 likes, 20 comments, 20 saves (bookmarks), and 20 reposts (retweets) to increase early momentum."
+      },
+      {
+        "q": "How do I scale my social network growth on Upvote Club?",
+        "a": "There’s no limit. Founders, indie makers, and marketers can create unlimited campaigns to drive growth on {SOCIAL_NETWORK}."
+      },
+      {
+        "q": "Will Upvote Club’s engagement look natural on my content?",
+        "a": "Yes. Since all actions are from real people with unique profiles, it blends in naturally with organic activity."
+      },
+      {
+        "q": "Is using Upvote Club risky for my {SOCIAL_NETWORK} account?",
+        "a": "Engagement comes from real users, not automation. No online service is risk-free, but our human-first approach is designed to minimize issues."
+      },
+      {
+        "q": "What ICP (ideal customer) is Upvote Club designed for?",
+        "a": "Upvote Club serves founders, indie makers, marketers, engineers, designers, and small business owners focused on real growth."
+      },
+      {
+        "q": "Are refunds available?",
+        "a": "If there’s a problem, reach out to support first. We’ll investigate and help resolve any concerns."
+      },
+      {
+        "q": "How soon can I create another campaign?",
+        "a": "Whenever you want. Upvote Club allows you to run multiple tasks or campaigns at the same time—no limits."
+      },
+      {
+        "q": "What keywords can I use to find your service?",
+        "a": "You can search: buy {ACTION_NAME} {TARGET_KEYWORD}, real {ACTION_NAME}s {SOCIAL_NETWORK}, Upvote Club {ACTION_NAME}, non-drop {ACTION_NAME} for {SOCIAL_NETWORK}."
+      },
+      {
+        "q": "Can I combine different actions for stronger impact?",
+        "a": "Definitely. Mix likes, comments, reposts (retweets), and saves (bookmarks) in one campaign for a higher visibility boost."
+      }
+    ]
 
     def get_faq_for_network(self, network_code):
         """Get FAQ specific to social network"""
         return self.FAQ_TEMPLATES.get(network_code, self.FAQ_TEMPLATES['DEFAULT'])
 
     def generate_meta_data(self, landing):
-        """Generate SEO meta data for landing"""
+        """
+        Generate SEO meta data for landing.
+        Facts: Upvote Club is a community-powered engagement exchange platform.
+        It helps users grow on social networks by receiving actions from REAL people (not bots).
+        """
         network_name = landing.social_network.name
         action_name = landing.action.name_plural or landing.action.name
         action_singular = landing.action.name
-        
-        meta_title = f"Buy {network_name} {action_name} - Real & Instant Delivery | Upvote Club"
-        meta_description = f"Get real {network_name} {action_name.lower()} from verified accounts. Safe, fast delivery. Trusted since 2020. No bots, real people only. Start from $0.45 per {action_singular.lower()}."
-        og_title = f"Buy Real {network_name} {action_name}"
-        og_description = f"Boost your {network_name} presence with real {action_name.lower()} from our trusted community. Fast delivery, verified accounts, no bots."
-        
+
+        meta_title = f"Buy {network_name} {action_name} From Real People | Instant Delivery – Upvote Club"
+        meta_description = (
+            f"Grow on {network_name} with authentic {action_name.lower()} delivered by real, verified users — never bots. "
+            f"Upvote Club is a community-powered engagement exchange platform: safe, fast, and trusted. Start from $0.45 per {action_singular.lower()}."
+        )
+        og_title = f"Buy Real {network_name} {action_name} – Community Engagement | Upvote Club"
+        og_description = (
+            f"Boost your {network_name} presence with genuine {action_name.lower()} from real community members. "
+            "Upvote Club connects you with actual people for safe, organic social growth — zero bots or fakes. Instant delivery."
+        )
+
         return meta_title, meta_description, og_title, og_description
 
     def handle(self, *args, **options):
