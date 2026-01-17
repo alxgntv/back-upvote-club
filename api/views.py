@@ -3027,9 +3027,7 @@ def create_payment_intent(request):
         intent = stripe.PaymentIntent.create(
             amount=int(amount * 100),  # Конвертируем в центы
             currency='usd',
-            automatic_payment_methods={
-                'enabled': True,
-            },
+            payment_method_types=['card'],
             metadata=metadata
         )
         
@@ -3351,10 +3349,7 @@ def confirm_subscription(request):
                         payment_method=setup_intent.payment_method,
                         confirm=True,
                         off_session=True,
-                        automatic_payment_methods={
-                            'enabled': True,
-                            'allow_redirects': 'never'
-                        },
+                        payment_method_types=['card'],
                         description='Subscription card verification $1',
                         metadata={
                             'user_id': str(request.user.id),
