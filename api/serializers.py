@@ -683,6 +683,23 @@ class BuyLandingSerializer(serializers.ModelSerializer):
             'action_id',
             'slug',
             'reviews',
+            # Price and quantity
+            'price_per_action',
+            'quantity_steps',
+            # SEO meta data
+            'meta_title',
+            'meta_description',
+            'og_title',
+            'og_description',
+            # How It Works section
+            'how_it_works_title',
+            'how_it_works',
+            # FAQ section
+            'faq_section_title',
+            'faq',
+            # Reviews section
+            'reviews_section_title',
+            # Timestamps
             'created_at',
             'updated_at'
         ]

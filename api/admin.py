@@ -2977,11 +2977,20 @@ class BuyLandingAdmin(admin.ModelAdmin):
         'slug',
         'social_network',
         'action',
+        'price_per_action',
         'is_indexed',
         'created_at',
         'updated_at'
     )
-    search_fields = ('title', 'slug', 'description', 'short_description')
+    search_fields = (
+        'title', 
+        'slug', 
+        'description', 
+        'short_description',
+        'meta_title',
+        'meta_description',
+        'h1'
+    )
     list_filter = ('social_network', 'action', 'is_indexed', 'created_at')
     readonly_fields = ('created_at', 'updated_at', 'indexed_at')
     filter_horizontal = ('reviews',)
@@ -2990,16 +2999,38 @@ class BuyLandingAdmin(admin.ModelAdmin):
             'fields': ('title', 'slug', 'social_network', 'action')
         }),
         ('Content', {
-            'fields': ('description', 'short_description', 'h1')
+            'fields': ('h1', 'description', 'short_description')
+        }),
+        ('Price & Quantity', {
+            'fields': ('price_per_action', 'quantity_steps'),
+            'description': 'Configure pricing and available quantity options'
+        }),
+        ('SEO Meta Data', {
+            'fields': ('meta_title', 'meta_description', 'og_title', 'og_description'),
+            'classes': ('collapse',),
+            'description': 'SEO and Open Graph metadata for search engines and social media'
+        }),
+        ('How It Works Section', {
+            'fields': ('how_it_works_title', 'how_it_works'),
+            'classes': ('collapse',),
+            'description': 'JSON format: [{"emoji": "🧗‍♂️", "title": "Title", "text": "Description"}]'
+        }),
+        ('FAQ Section', {
+            'fields': ('faq_section_title', 'faq'),
+            'classes': ('collapse',),
+            'description': 'JSON format: [{"q": "Question?", "a": "Answer"}]'
         }),
         ('Reviews', {
-            'fields': ('reviews',)
+            'fields': ('reviews_section_title', 'reviews'),
+            'classes': ('collapse',)
         }),
         ('Indexing', {
-            'fields': ('is_indexed', 'indexed_at', 'indexing_error')
+            'fields': ('is_indexed', 'indexed_at', 'indexing_error'),
+            'classes': ('collapse',)
         }),
         ('Timestamps', {
-            'fields': ('created_at', 'updated_at')
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
         }),
     )
     save_on_top = True

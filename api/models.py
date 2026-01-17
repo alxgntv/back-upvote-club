@@ -1392,6 +1392,91 @@ class BuyLanding(models.Model):
         help_text='URL-friendly identifier for this landing'
     )
     
+    # Price and quantity configuration
+    price_per_action = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=2.00,
+        verbose_name='Price Per Action',
+        help_text='Price in points for one action (e.g., 0.45 for Twitter like, 2.00 for ProductHunt upvote)'
+    )
+    quantity_steps = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name='Quantity Steps',
+        help_text='Available quantity options, e.g., [2, 5, 10, 20, 50, 100]'
+    )
+    
+    # SEO fields
+    meta_title = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        verbose_name='Meta Title',
+        help_text='SEO title for search engines'
+    )
+    meta_description = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name='Meta Description',
+        help_text='SEO description for search engines'
+    )
+    og_title = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        verbose_name='OG Title',
+        help_text='Open Graph title for social media sharing'
+    )
+    og_description = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name='OG Description',
+        help_text='Open Graph description for social media sharing'
+    )
+    
+    # How It Works section
+    how_it_works_title = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        default='How It Works?',
+        verbose_name='How It Works Title',
+        help_text='Title for "How It Works" section'
+    )
+    how_it_works = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name='How It Works',
+        help_text='List of how it works items: [{"emoji": "🧗‍♂️", "title": "Real people...", "text": "We are..."}]'
+    )
+    
+    # FAQ section
+    faq_section_title = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        default='Frequently Asked Questions',
+        verbose_name='FAQ Section Title',
+        help_text='Title for FAQ section'
+    )
+    faq = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name='FAQ',
+        help_text='FAQ items: [{"q": "How long does delivery take?", "a": "Usually 1-24 hours..."}]'
+    )
+    
+    # Reviews section
+    reviews_section_title = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        default='What Our Customers Say',
+        verbose_name='Reviews Section Title',
+        help_text='Title for reviews section'
+    )
+    
     # Поля для отслеживания индексации Google
     is_indexed = models.BooleanField(
         default=False,
