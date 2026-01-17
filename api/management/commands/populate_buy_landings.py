@@ -223,28 +223,86 @@ class Command(BaseCommand):
         }
     ]
 
-    def generate_meta_data(self, landing):
+    # Benefits/reasons for each action type
+    ACTION_BENEFITS = {
+        'LIKE': "to boost engagement signals, increase post visibility, and improve algorithmic reach",
+        'FOLLOW': "to grow your audience, increase credibility, and expand your influence",
+        'REPOST': "to amplify your message, reach new audiences, and increase viral potential",
+        'SAVE': "to signal content relevance, increase long-term visibility, and strengthen profile performance",
+        'COMMENT': "to spark conversations, increase engagement depth, and build community interaction",
+        'UPVOTE': "to boost ranking position, increase visibility, and gain community validation",
+        'DOWNVOTE': "to influence content ranking and provide community feedback",
+        'UP': "to boost ranking position, increase visibility, and gain community validation",
+        'DOWN': "to influence content ranking and provide community feedback",
+        'STAR': "to show appreciation, increase repository visibility, and boost developer credibility",
+        'CONNECT': "to expand your professional network, increase opportunities, and build industry relationships",
+        'SHARE': "to amplify reach, increase distribution, and attract new audiences",
+        'CLAP': "to show appreciation, boost story ranking, and increase Medium distribution",
+        'RESTACK': "to amplify newsletter reach, grow subscriber base, and increase content discovery",
+        'BOOST': "to increase post visibility, reach wider audience, and improve engagement rates",
+        'FAVORITE': "to signal quality content, increase visibility, and build social proof",
+        'UNICORN': "to highlight exceptional content, increase author reputation, and boost post visibility",
+        'REPLY': "to increase conversation depth, boost engagement signals, and build community",
+        'WATCH': "to show interest, get updates, and increase repository visibility",
+        'INSTALL': "to boost extension credibility, increase user trust, and improve store ranking",
+        'REVIEW': "to build social proof, increase credibility, and improve conversion rates",
+    }
+
+    def generate_content(self, landing):
         """
-        Generate SEO meta data for landing.
-        Facts: Upvote Club is a community-powered engagement exchange platform.
-        It helps users grow on social networks by receiving actions from REAL people (not bots).
+        Generate all content fields for landing: h1, description, short_description, meta fields.
         """
         network_name = landing.social_network.name
         action_name = landing.action.name_plural or landing.action.name
         action_singular = landing.action.name
+        
+        # Get price and benefits
+        action_code = landing.action.code
+        price = self.PRICES.get(action_code, Decimal('0.90'))
+        price_float = float(price)
+        benefits = self.ACTION_BENEFITS.get(action_code, "to increase engagement, boost visibility, and grow your presence")
 
-        meta_title = f"Buy {network_name} {action_name} From Real People | Instant Delivery – Upvote Club"
-        meta_description = (
-            f"Grow on {network_name} with authentic {action_name.lower()} delivered by real, verified users — never bots. "
-            f"Upvote Club is a community-powered engagement exchange platform: safe, fast, and trusted. Start from $0.45 per {action_singular.lower()}."
+        # Generate H1 (same as meta_title)
+        h1 = f"Buy Legit {network_name} {action_name}, Start from ${price_float:.2f} per {action_singular}"
+        
+        # Generate Description (long form with benefits explanation)
+        description = (
+            f"Buy real {network_name} {action_name.lower()} from verified community members at Upvote Club. "
+            f"Starting at just ${price_float:.2f} per {action_singular.lower()}, our platform connects you with genuine users "
+            f"{benefits}. "
+            f"All engagement comes from real people—never bots or fake accounts. We strictly moderate our community "
+            f"to ensure authentic, high-quality interactions that help you grow naturally on {network_name}. "
+            f"Get started today and see real results from real people."
         )
+        
+        # Generate Short Description (concise version with benefits)
+        short_description = (
+            f"Buy Legit {network_name} {action_name} from ${price_float:.2f} per {action_singular} "
+            f"{benefits}."
+        )
+        
+        # Generate meta_title (same as H1)
+        meta_title = h1
+        
+        # Generate meta_description (same as short_description)
+        meta_description = short_description
+        
+        # Generate OG tags
         og_title = f"Buy Real {network_name} {action_name} – Community Engagement | Upvote Club"
         og_description = (
             f"Boost your {network_name} presence with genuine {action_name.lower()} from real community members. "
             "Upvote Club connects you with actual people for safe, organic social growth — zero bots or fakes. Instant delivery."
         )
 
-        return meta_title, meta_description, og_title, og_description
+        return {
+            'h1': h1,
+            'description': description,
+            'short_description': short_description,
+            'meta_title': meta_title,
+            'meta_description': meta_description,
+            'og_title': og_title,
+            'og_description': og_description,
+        }
 
     def handle(self, *args, **options):
         """Main handler for the command"""
@@ -288,13 +346,16 @@ class Command(BaseCommand):
             landing.reviews_section_title = "What Our Customers Say"
             self.stdout.write(self.style.SUCCESS(f"  ✓ Reviews section title set"))
             
-            # Generate and set meta data
-            meta_title, meta_description, og_title, og_description = self.generate_meta_data(landing)
-            landing.meta_title = meta_title
-            landing.meta_description = meta_description
-            landing.og_title = og_title
-            landing.og_description = og_description
-            self.stdout.write(self.style.SUCCESS(f"  ✓ SEO meta data generated"))
+            # Generate and set all content fields
+            content = self.generate_content(landing)
+            landing.h1 = content['h1']
+            landing.description = content['description']
+            landing.short_description = content['short_description']
+            landing.meta_title = content['meta_title']
+            landing.meta_description = content['meta_description']
+            landing.og_title = content['og_title']
+            landing.og_description = content['og_description']
+            self.stdout.write(self.style.SUCCESS(f"  ✓ All content generated (H1, descriptions, SEO)"))
             
             # Save the landing
             landing.save()
