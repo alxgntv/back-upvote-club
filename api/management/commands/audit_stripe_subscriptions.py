@@ -67,13 +67,23 @@ class Command(BaseCommand):
         active_emails = set()
         
         try:
-            # Get all active subscriptions
-            subscriptions = stripe.Subscription.list(
+            # Get all active and trialing subscriptions
+            active_subscriptions = stripe.Subscription.list(
                 status='active',
                 limit=100
             )
+            trialing_subscriptions = stripe.Subscription.list(
+                status='trialing',
+                limit=100
+            )
             
-            for subscription in subscriptions.auto_paging_iter():
+            # Combine both lists
+            subscriptions = list(active_subscriptions.auto_paging_iter())
+            subscriptions.extend(list(trialing_subscriptions.auto_paging_iter()))
+            
+            logger.info(f"Found {len(subscriptions)} subscriptions (active + trialing) in Stripe")
+            
+            for subscription in subscriptions:
                 try:
                     customer_id = subscription.customer
                     customer = stripe.Customer.retrieve(customer_id)
