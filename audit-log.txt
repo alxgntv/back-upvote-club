@@ -1,0 +1,2 @@
+ ›   Error: Nonexistent flag: --dry-run
+ ›   See more help with --help

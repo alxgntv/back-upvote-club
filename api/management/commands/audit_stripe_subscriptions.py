@@ -98,9 +98,22 @@ class Command(BaseCommand):
         """Get all users from database with their Firebase emails"""
         user_data = []
         
-        users = User.objects.select_related('userprofile').all()
+        # Optimization: Only check users with paid status (not FREE)
+        # FREE users don't need to be checked against Stripe
+        users = User.objects.select_related('userprofile').exclude(
+            userprofile__status='FREE'
+        )
         
+        total_users = users.count()
+        self.stdout.write(f'  Processing {total_users} non-FREE users (skipping FREE users)...')
+        logger.info(f"Processing {total_users} non-FREE users")
+        
+        processed = 0
         for user in users:
+            processed += 1
+            if processed % 10 == 0:
+                self.stdout.write(f'  Progress: {processed}/{total_users} users processed...', ending='\r')
+                self.stdout.flush()
             try:
                 firebase_uid = user.username
                 
@@ -124,7 +137,8 @@ class Command(BaseCommand):
                 logger.warning(f"User {user.username} has no profile")
             except Exception as e:
                 logger.error(f"Error processing user {user.username}: {str(e)}")
-                
+        
+        self.stdout.write(f'\n  Completed processing {processed} users')
         return user_data
 
     def sync_user_statuses(self, user_data, active_stripe_emails, dry_run):
