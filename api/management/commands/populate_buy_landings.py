@@ -7,56 +7,91 @@ class Command(BaseCommand):
     help = 'Populate BuyLanding objects with SSR data'
 
     # Price configuration per action type (in points)
+    # 
+    # Pricing structure:
+    # - LIKE: $0.45 for all social networks
+    # - UPVOTE (except ProductHunt): $0.90
+    # - UPVOTE (ProductHunt only): Special case handled separately
+    # - FOLLOW: $0.90 for all social networks
+    # - COMMENT: $0.90 for all social networks
+    # - SAVE: $0.90 for all social networks
+    # - REPOST: $0.90 for all social networks
+    # - All other actions: $0.90
+    #
     PRICES = {
+        # Likes - $0.45 для всех соц.сетей
         'LIKE': Decimal('0.45'),
-        'FOLLOW': Decimal('1.50'),
-        'REPOST': Decimal('0.80'),
-        'SAVE': Decimal('0.60'),
-        'COMMENT': Decimal('2.00'),
-        'UPVOTE': Decimal('2.00'),
-        'DOWNVOTE': Decimal('2.00'),
-        'UP': Decimal('2.00'),
-        'DOWN': Decimal('2.00'),
-        'STAR': Decimal('1.20'),
-        'SUBSCRIBE': Decimal('2.50'),
-        'CONNECT': Decimal('1.80'),
-        'SHARE': Decimal('0.70'),
-        'CLAP': Decimal('0.50'),
+        
+        # Followers - $0.90 для всех
+        'FOLLOW': Decimal('0.90'),
+        
+        # Upvotes - $0.90 для всех кроме ProductHunt (ProductHunt отдельно)
+        'UPVOTE': Decimal('0.90'),
+        'UP': Decimal('0.90'),
+        'DOWN': Decimal('0.90'),
+        'DOWNVOTE': Decimal('0.90'),
+        
+        # Comments - $0.90 для всех
+        'COMMENT': Decimal('0.90'),
+        'REPLY': Decimal('0.90'),
+        
+        # Saves - $0.90 для всех
+        'SAVE': Decimal('0.90'),
+        
+        # Reposts - $0.90 для всех
+        'REPOST': Decimal('0.90'),
         'RESTACK': Decimal('0.90'),
-        'BOOST': Decimal('3.00'),
-        'FAVORITE': Decimal('0.55'),
-        'INSTALL': Decimal('5.00'),
-        'UNICORN': Decimal('1.50'),
-        'REPLY': Decimal('2.20'),
-        'REVIEW': Decimal('4.00'),
+        'BOOST': Decimal('0.90'),
+        'SHARE': Decimal('0.90'),
+        
+        # Stars & Favorites - $0.90
+        'STAR': Decimal('0.90'),
+        'FAVORITE': Decimal('0.90'),
+        
+        # Claps - $0.90
+        'CLAP': Decimal('0.90'),
+        
+        # Connections - $0.90
+        'CONNECT': Decimal('0.90'),
+        
+        # Unicorns - $0.90
+        'UNICORN': Decimal('0.90'),
+        
+        # Watch - $0.90
+        'WATCH': Decimal('0.90'),
+        
+        # Installs & Reviews - $0.90
+        'INSTALL': Decimal('0.90'),
+        'REVIEW': Decimal('0.90'),
     }
 
     # Quantity steps per action type
+    # Единый шаг для всех действий: 2, 3, 4, 5, 6, 8, 10
     QUANTITY_STEPS = {
-        'LIKE': [5, 10, 25, 50, 100, 250],
-        'FOLLOW': [2, 5, 10, 20, 50, 100],
-        'REPOST': [2, 5, 10, 25, 50, 100],
-        'SAVE': [5, 10, 25, 50, 100, 250],
-        'COMMENT': [2, 5, 10, 20, 30],
-        'UPVOTE': [2, 5, 10, 20, 50, 100],
-        'DOWNVOTE': [2, 5, 10, 20, 50],
-        'UP': [2, 5, 10, 20, 50, 100],
-        'DOWN': [2, 5, 10, 20, 50],
-        'STAR': [5, 10, 25, 50, 100, 250],
-        'SUBSCRIBE': [2, 5, 10, 20, 50, 100],
-        'CONNECT': [2, 5, 10, 20, 50, 100],
-        'SHARE': [5, 10, 25, 50, 100, 250],
-        'CLAP': [5, 10, 25, 50, 100, 250],
-        'RESTACK': [2, 5, 10, 25, 50, 100],
-        'BOOST': [2, 5, 10, 20, 50],
-        'FAVORITE': [5, 10, 25, 50, 100, 250],
-        'INSTALL': [2, 5, 10, 20, 50],
-        'UNICORN': [2, 5, 10, 25, 50, 100],
-        'REPLY': [2, 5, 10, 20, 30],
-        'REVIEW': [2, 5, 10, 20],
+        'LIKE': [2, 3, 4, 5, 6, 8, 10],
+        'FOLLOW': [2, 3, 4, 5, 6, 8, 10],
+        'REPOST': [2, 3, 4, 5, 6, 8, 10],
+        'SAVE': [2, 3, 4, 5, 6, 8, 10],
+        'COMMENT': [2, 3, 4, 5, 6, 8, 10],
+        'UPVOTE': [2, 3, 4, 5, 6, 8, 10],
+        'DOWNVOTE': [2, 3, 4, 5, 6, 8, 10],
+        'UP': [2, 3, 4, 5, 6, 8, 10],
+        'DOWN': [2, 3, 4, 5, 6, 8, 10],
+        'STAR': [2, 3, 4, 5, 6, 8, 10],
+        'CONNECT': [2, 3, 4, 5, 6, 8, 10],
+        'SHARE': [2, 3, 4, 5, 6, 8, 10],
+        'CLAP': [2, 3, 4, 5, 6, 8, 10],
+        'RESTACK': [2, 3, 4, 5, 6, 8, 10],
+        'BOOST': [2, 3, 4, 5, 6, 8, 10],
+        'FAVORITE': [2, 3, 4, 5, 6, 8, 10],
+        'INSTALL': [2, 3, 4, 5, 6, 8, 10],
+        'UNICORN': [2, 3, 4, 5, 6, 8, 10],
+        'REPLY': [2, 3, 4, 5, 6, 8, 10],
+        'REVIEW': [2, 3, 4, 5, 6, 8, 10],
+        'WATCH': [2, 3, 4, 5, 6, 8, 10],
     }
 
-    DEFAULT_QUANTITY_STEPS = [2, 5, 10, 20, 50, 100]
+    DEFAULT_QUANTITY_STEPS = [2, 3, 4, 5, 6, 8, 10]
 
     # How It Works content
     HOW_IT_WORKS = [
@@ -178,7 +213,7 @@ class Command(BaseCommand):
         action_singular = landing.action.name
         
         meta_title = f"Buy {network_name} {action_name} - Real & Instant Delivery | Upvote Club"
-        meta_description = f"Get real {network_name} {action_name.lower()} from verified accounts. Safe, fast delivery. Trusted since 2020. No bots, real people only. Start from $0.50 per {action_singular.lower()}."
+        meta_description = f"Get real {network_name} {action_name.lower()} from verified accounts. Safe, fast delivery. Trusted since 2020. No bots, real people only. Start from $0.45 per {action_singular.lower()}."
         og_title = f"Buy Real {network_name} {action_name}"
         og_description = f"Boost your {network_name} presence with real {action_name.lower()} from our trusted community. Fast delivery, verified accounts, no bots."
         
@@ -203,9 +238,9 @@ class Command(BaseCommand):
             self.stdout.write(f"\nProcessing: {network_name} {action_name} ({landing.slug})")
             
             # Set price per action
-            price = self.PRICES.get(action_code, Decimal('2.00'))
+            price = self.PRICES.get(action_code, Decimal('0.90'))
             landing.price_per_action = price
-            self.stdout.write(self.style.SUCCESS(f"  ✓ Price per action: {price} points"))
+            self.stdout.write(self.style.SUCCESS(f"  ✓ Price per action: ${price}"))
             
             # Set quantity steps
             steps = self.QUANTITY_STEPS.get(action_code, self.DEFAULT_QUANTITY_STEPS)
