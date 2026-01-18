@@ -139,27 +139,23 @@ class Command(BaseCommand):
         },
         {
             "q": "How does Upvote Club work?",
-            "a": "You create a task requesting actions. Community members complete your task to earn points. Everyone helps each other grow in a real way."
+            "a": "You create a boosting task for your content. Community members complete your task to earn points. Everyone grows together. And boosting each other"
         },
         {
             "q": "Is it safe to buy engagement here?",
-            "a": "Our system is designed to be safe by using only real users and never asking for social network logins. We have strong moderation to reduce risk."
+            "a": "Yes. Upvote Club is designed to be safe by using only real users and never asking for social network logins. We have strong moderation to reduce risk."
         },
         {
             "q": "Do I need to give my password?",
             "a": "Never. Upvote Club will never ask for any social network password or login. You just provide a public link to your content."
         },
         {
-            "q": "How quickly will I receive my order?",
-            "a": "Most tasks start soon after payment and typically complete within 1-24 hours, depending on the quantity."
-        },
-        {
             "q": "Is my information confidential?",
             "a": "Yes. Only your public link is visible to members who complete your task. Your account info and order remain private."
         },
         {
-            "q": "What is non-drop engagement?",
-            "a": "It means the actions come from real people and are unlikely to disappear later, unlike fake engagement from bots."
+            "q": "Is it non-drop engagement?",
+            "a": "Yes. The actions come from real people and are unlikely to disappear later, unlike fake engagement from bots."
         },
         {
             "q": "Who completes the actions on my posts?",
@@ -167,7 +163,7 @@ class Command(BaseCommand):
         },
         {
             "q": "What moderation do you have?",
-            "a": "We review all activity. Bot-like or suspicious accounts are blocked. We focus on quality engagement and a trustworthy experience."
+            "a": "We review all accounts. Bot-like or suspicious accounts are blocked. We focus on quality engagement and a trustworthy experience."
         },
         {
             "q": "How do points and tasks work?",
@@ -195,7 +191,7 @@ class Command(BaseCommand):
         },
         {
             "q": "Will Upvote Club's engagement look natural on my content?",
-            "a": "Yes. Since all actions are from real people with unique profiles, it blends in naturally with organic activity."
+            "a": "Yes. It's is natural. All actions are from real people with unique profiles, it blends in naturally with organic activity."
         },
         {
             "q": "Is using Upvote Club risky for my account?",
@@ -207,10 +203,10 @@ class Command(BaseCommand):
         },
         {
             "q": "Are refunds available?",
-            "a": "If there's a problem, reach out to support first. We'll investigate and help resolve any concerns."
+            "a": "Yes"
         },
         {
-            "q": "How soon can I create another campaign?",
+            "q": "How soon can I create another boost?",
             "a": "Whenever you want. Upvote Club allows you to run multiple tasks or campaigns at the same time—no limits."
         },
         {
