@@ -1243,6 +1243,16 @@ def send_task_promotion_emails(task):
                     logger.debug(f"User {user.username} unsubscribed from promotional emails")
                     continue
                 
+                # Пропускаем пользователей с тарифами BUDDY и MATE
+                try:
+                    user_status = user.userprofile.status
+                    if user_status in ['BUDDY', 'MATE']:
+                        skipped_count += 1
+                        logger.debug(f"Skipping user {user.username} with {user_status} plan")
+                        continue
+                except Exception as e:
+                    logger.warning(f"Could not check status for user {user.username}: {str(e)}")
+                
                 # Получаем email из Firebase
                 firebase_uid = user.username
                 user_email = get_firebase_email(firebase_uid)

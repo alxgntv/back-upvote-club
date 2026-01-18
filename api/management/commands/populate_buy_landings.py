@@ -263,21 +263,17 @@ class Command(BaseCommand):
         benefits = self.ACTION_BENEFITS.get(action_code, "to increase engagement, boost visibility, and grow your presence")
 
         # Generate H1 (same as meta_title)
-        h1 = f"Buy Legit {network_name} {action_name}, Start from ${price_float:.2f} per {action_singular}"
+        h1 = f"Buy Legit & Real {network_name} {action_name}, Start from ${price_float:.2f} per {action_singular}"
         
         # Generate Description (long form with benefits explanation)
         description = (
             f"Buy real {network_name} {action_name.lower()} from verified community members at Upvote Club. "
-            f"Starting at just ${price_float:.2f} per {action_singular.lower()}, our platform connects you with genuine users "
-            f"{benefits}. "
-            f"All engagement comes from real people—never bots or fake accounts. We strictly moderate our community "
-            f"to ensure authentic, high-quality interactions that help you grow naturally on {network_name}. "
-            f"Get started today and see real results from real people."
+            f"Starting at just ${price_float:.2f} per {action_singular.lower()}, our platform connects you with genuine users and helps you boost your presence on {network_name}."
         )
         
         # Generate Short Description (concise version with benefits)
         short_description = (
-            f"Buy Legit {network_name} {action_name} from ${price_float:.2f} per {action_singular} "
+            f"Buy Legit & Rea {network_name} {action_name} from ${price_float:.2f} per {action_singular} "
             f"{benefits}."
         )
         
