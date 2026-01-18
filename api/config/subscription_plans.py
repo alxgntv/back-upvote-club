@@ -55,8 +55,8 @@ SUBSCRIPTION_PLANS = {
         'features': {
             'initial_points': 0,
             'daily_task_limit': 10,
-            'tasks_creation_discount': 20,
-            'points_purchase_discount': 20,
+            'tasks_creation_discount': 0,
+            'points_purchase_discount': 0,
             'daily_actions_limit': float('inf'),  # Unlimited
             'monthly_free_points': 250,
             'yearly_free_points': 5000,

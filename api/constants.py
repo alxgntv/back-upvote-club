@@ -34,8 +34,8 @@ SUBSCRIPTION_PLAN_CONFIG = {
             'points': 5000
         },
         'trial_days': 7,
-        'purchase_points_discount': 20,
-        'create_task_discount': 20,
+        'purchase_points_discount': 0,
+        'create_task_discount': 0,
         'daily_task_limit': 10
     },
     'MATE': {

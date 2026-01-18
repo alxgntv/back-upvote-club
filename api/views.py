@@ -4545,6 +4545,156 @@ def delete_task(request, task_id):
         logger.error(f"[delete_task] Error: {str(e)}", exc_info=True)
         return Response({'error': 'Failed to delete task', 'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+@authentication_classes([JWTAuthentication])
+def pin_task(request, task_id):
+    """
+    Закрепляет/открепляет задачу в топе (доступно только для пользователей с MATE статусом).
+    """
+    logger.info(f"[pin_task] Request to pin/unpin task {task_id} by user {request.user.id}")
+    try:
+        # Проверяем, что пользователь имеет статус MATE
+        user_profile = request.user.userprofile
+        if user_profile.status != 'MATE':
+            logger.warning(f"[pin_task] User {request.user.id} does not have MATE status. Current status: {user_profile.status}")
+            return Response({
+                'error': 'Pin feature is available only for MATE subscribers.',
+                'user_status': user_profile.status
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # Получаем значение is_pinned из request body
+        is_pinned = request.data.get('is_pinned')
+        if is_pinned is None:
+            logger.error(f"[pin_task] Missing 'is_pinned' parameter in request body")
+            return Response({'error': 'Missing required parameter: is_pinned'}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            # Получаем задачу и проверяем владельца
+            task = Task.objects.select_for_update().get(id=task_id, creator=request.user)
+            logger.info(f"[pin_task] Task found: id={task.id}, status={task.status}, current is_pinned={task.is_pinned}")
+
+            # Проверяем, что задача активна
+            if task.status != 'ACTIVE':
+                logger.warning(f"[pin_task] Task {task_id} is not active. Current status: {task.status}")
+                return Response({
+                    'error': 'Only active tasks can be pinned.',
+                    'task_status': task.status
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # Обновляем статус pin
+            old_is_pinned = task.is_pinned
+            task.is_pinned = is_pinned
+            task.save(update_fields=['is_pinned'])
+            logger.info(f"[pin_task] Task {task_id} pin status updated: {old_is_pinned} -> {is_pinned}")
+
+        return Response({
+            'success': True,
+            'message': f'Task {"pinned to top" if is_pinned else "unpinned"} successfully!',
+            'task_id': task.id,
+            'is_pinned': task.is_pinned,
+            'boost': 'x2 completion speed' if is_pinned else 'normal speed'
+        }, status=status.HTTP_200_OK)
+
+    except Task.DoesNotExist:
+        logger.error(f"[pin_task] Task {task_id} not found or not owned by user {request.user.id}")
+        return Response({'error': 'Task not found or not owned by user.'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"[pin_task] Error: {str(e)}", exc_info=True)
+        return Response({'error': 'Failed to update pin status', 'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+@authentication_classes([JWTAuthentication])
+def promote_task(request, task_id):
+    """
+    Промотирует задание: отправляет письма всем пользователям с верифицированным профилем в соответствующей социальной сети.
+    Доступно только для пользователей с MATE статусом.
+    Отправка писем происходит асинхронно с ограничением 10 писем/сек.
+    """
+    logger.info(f"[promote_task] Request to promote task {task_id} by user {request.user.id}")
+    try:
+        # Проверяем, что пользователь имеет статус MATE
+        user_profile = request.user.userprofile
+        if user_profile.status != 'MATE':
+            logger.warning(f"[promote_task] User {request.user.id} does not have MATE status. Current status: {user_profile.status}")
+            return Response({
+                'error': 'Promote feature is available only for MATE subscribers.',
+                'user_status': user_profile.status
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # Получаем задачу и проверяем владельца
+        task = Task.objects.select_related('social_network', 'creator').get(id=task_id, creator=request.user)
+        logger.info(f"[promote_task] Task found: id={task.id}, type={task.type}, status={task.status}, social_network={task.social_network.name}")
+
+        # Проверяем, что задача активна
+        if task.status != 'ACTIVE':
+            logger.warning(f"[promote_task] Task {task_id} is not active. Current status: {task.status}")
+            return Response({
+                'error': 'Only active tasks can be promoted.',
+                'task_status': task.status
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Проверяем, не был ли уже отправлен промоушен
+        if task.promo_email_sent:
+            logger.warning(f"[promote_task] Task {task_id} already promoted. Cannot promote twice.")
+            return Response({
+                'error': 'This task has already been promoted. You can only promote a task once.',
+                'task_id': task.id,
+                'promo_email_sent': True
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Импортируем функцию отправки промо-писем
+        from .utils.email_utils import send_task_promotion_emails
+        
+        logger.info(f"[promote_task] Starting email campaign for task {task_id}")
+        
+        # Отправляем промо-письма (с ограничением скорости 10 писем/сек)
+        result = send_task_promotion_emails(task)
+        
+        logger.info(f"[promote_task] Email campaign completed: {result}")
+        
+        # Если хотя бы одно письмо отправлено успешно, помечаем задачу как промотированную
+        sent = result.get('sent', 0)
+        if sent > 0:
+            task.promo_email_sent = True
+            task.save(update_fields=['promo_email_sent'])
+            logger.info(f"[promote_task] Task {task_id} marked as promoted (promo_email_sent=True)")
+        
+        # Формируем ответ на основе результатов
+        if result.get('error'):
+            return Response({
+                'success': False,
+                'error': result['error'],
+                'stats': result
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        total = result.get('total', 0)
+        
+        message = f"Task promoted successfully! Sent {sent} email(s) to verified users."
+        if sent == 0:
+            message = "No emails were sent. This might be because no users are subscribed to promotional emails or have verified accounts."
+        
+        return Response({
+            'success': True,
+            'message': message,
+            'task_id': task.id,
+            'stats': {
+                'sent': result.get('sent', 0),
+                'failed': result.get('failed', 0),
+                'skipped': result.get('skipped', 0),
+                'total': total
+            },
+            'boost': 'x3 completion speed'
+        }, status=status.HTTP_200_OK)
+
+    except Task.DoesNotExist:
+        logger.error(f"[promote_task] Task {task_id} not found or not owned by user {request.user.id}")
+        return Response({'error': 'Task not found or not owned by user.'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"[promote_task] Error: {str(e)}", exc_info=True)
+        return Response({'error': 'Failed to promote task', 'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def points_available_for_purchase(request):

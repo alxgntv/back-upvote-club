@@ -1135,3 +1135,190 @@ def send_producthunt_campaign_emails(task):
     except Exception as e:
         logger.error(f"Error in ProductHunt campaign for task {task.id}: {str(e)}", exc_info=True)
         return {'sent': 0, 'failed': 0, 'skipped': 0}
+
+
+def send_task_promotion_emails(task):
+    """
+    Отправляет промо-письма о задании всем пользователям с верифицированным аккаунтом в данной социальной сети.
+    Ограничение: не более 10 писем в секунду.
+    
+    Args:
+        task: объект Task для промоушена
+        
+    Returns:
+        dict: статистика отправки {'sent': int, 'failed': int, 'skipped': int, 'total': int}
+    """
+    from ..models import UserSocialProfile
+    
+    logger.info(f"[send_task_promotion_emails] Starting promotion campaign for task {task.id}")
+    logger.info(f"  Task details: {task.type} on {task.social_network.name} (code: {task.social_network.code})")
+    logger.info(f"  Task social_network ID: {task.social_network.id}")
+    
+    try:
+        # Проверяем что задание активно
+        if task.status != 'ACTIVE':
+            logger.warning(f"Task {task.id} is not active (status: {task.status}). Aborting promotion.")
+            return {'sent': 0, 'failed': 0, 'skipped': 0, 'total': 0, 'error': 'Task is not active'}
+        
+        # Сначала проверяем все профили в этой соц.сети
+        all_profiles = UserSocialProfile.objects.filter(social_network=task.social_network)
+        logger.info(f"Total profiles for {task.social_network.name}: {all_profiles.count()}")
+        
+        # Проверяем верифицированные
+        verified_by_status = UserSocialProfile.objects.filter(
+            social_network=task.social_network,
+            verification_status='VERIFIED'
+        )
+        logger.info(f"Profiles with verification_status='VERIFIED': {verified_by_status.count()}")
+        
+        verified_by_flag = UserSocialProfile.objects.filter(
+            social_network=task.social_network,
+            is_verified=True
+        )
+        logger.info(f"Profiles with is_verified=True: {verified_by_flag.count()}")
+        
+        # Находим всех пользователей с верифицированными профилями в этой социальной сети
+        # Проверяем по verification_status, так как это основное поле для верификации
+        verified_profiles = UserSocialProfile.objects.filter(
+            social_network=task.social_network,
+            verification_status='VERIFIED'
+        ).select_related('user').order_by('user_id')
+        
+        total_profiles = verified_profiles.count()
+        logger.info(f"Found {total_profiles} verified profiles for {task.social_network.name}")
+        
+        if total_profiles == 0:
+            logger.warning(f"No verified users found for {task.social_network.name}. Aborting promotion.")
+            return {'sent': 0, 'failed': 0, 'skipped': 0, 'total': 0, 'error': 'No verified users found'}
+        
+        sent_count = 0
+        failed_count = 0
+        skipped_count = 0
+        processed_users = set()
+        
+        # Получаем тип подписки для промо-уведомлений
+        try:
+            subscription_type = EmailSubscriptionType.objects.get(name='task_promoted')
+            logger.info(f"Using subscription type: {subscription_type.name}")
+        except EmailSubscriptionType.DoesNotExist:
+            logger.error("EmailSubscriptionType 'task_promoted' not found. Creating it...")
+            subscription_type = EmailSubscriptionType.objects.create(
+                name='task_promoted',
+                description='Notifications about promoted tasks from MATE users',
+                subscribe_all_users=True
+            )
+            logger.info(f"Created subscription type: {subscription_type.name}")
+        
+        # Счетчик для ограничения скорости отправки (10 писем/сек)
+        emails_in_current_second = 0
+        current_second_start = time.time()
+        
+        for profile in verified_profiles:
+            try:
+                user = profile.user
+                
+                # Пропускаем дубликаты пользователей
+                if user.id in processed_users:
+                    continue
+                processed_users.add(user.id)
+                
+                # Пропускаем создателя задания
+                if user == task.creator:
+                    skipped_count += 1
+                    logger.debug(f"Skipping task creator {user.username}")
+                    continue
+                
+                # Проверяем подписку на промо-уведомления (создаем если нет)
+                subscription, created = UserEmailSubscription.objects.get_or_create(
+                    user=user,
+                    subscription_type=subscription_type,
+                    defaults={'is_subscribed': True}
+                )
+                
+                if created:
+                    logger.info(f"Created new subscription for user {user.username} to task_promoted emails")
+                
+                if not subscription.is_subscribed:
+                    skipped_count += 1
+                    logger.debug(f"User {user.username} unsubscribed from promotional emails")
+                    continue
+                
+                # Получаем email из Firebase
+                firebase_uid = user.username
+                user_email = get_firebase_email(firebase_uid)
+                
+                if not user_email:
+                    failed_count += 1
+                    logger.warning(f"Could not get Firebase email for user {user.username}")
+                    continue
+                
+                # Ограничение скорости: не более 10 писем в секунду
+                current_time = time.time()
+                if current_time - current_second_start >= 1.0:
+                    # Прошла секунда, сбрасываем счетчик
+                    emails_in_current_second = 0
+                    current_second_start = current_time
+                
+                if emails_in_current_second >= 10:
+                    # Достигли лимита, ждем до конца секунды
+                    time_to_wait = 1.0 - (current_time - current_second_start)
+                    if time_to_wait > 0:
+                        logger.debug(f"Rate limit: waiting {time_to_wait:.2f}s before next batch")
+                        time.sleep(time_to_wait)
+                    emails_in_current_second = 0
+                    current_second_start = time.time()
+                
+                # Формируем context для html шаблона
+                context = {
+                    'task': task,
+                    'user': user,
+                    'user_email': user_email,
+                    'unsubscribe_url': f"{settings.SITE_URL}/api/unsubscribe/{subscription.unsubscribe_token}/"
+                }
+                
+                logger.debug(f"Rendering promotion email for user {user.username}")
+                html_content = render_to_string('email/task_promotion.html', context)
+                
+                # Отправляем email
+                email_service = EmailService()
+                result = email_service.send_email(
+                    to_email=user_email,
+                    subject=f'🚀 New {task.type} task on {task.social_network.name} - Earn {task.price} points!',
+                    html_content=html_content,
+                    unsubscribe_url=context['unsubscribe_url'],
+                    bcc_email='yesupvote@gmail.com'
+                )
+                
+                if result:
+                    sent_count += 1
+                    emails_in_current_second += 1
+                    logger.info(f"✓ Sent promotion email to {user.username} ({user_email})")
+                else:
+                    failed_count += 1
+                    logger.warning(f"✗ Failed to send promotion email to {user.username}")
+                
+            except Exception as e:
+                failed_count += 1
+                logger.error(f"Error sending promotion email to {profile.user.username}: {str(e)}", exc_info=True)
+        
+        total_unique_users = len(processed_users)
+        
+        logger.info(f"""
+            Promotion campaign completed for task {task.id}:
+            Total unique users processed: {total_unique_users}
+            Sent: {sent_count}
+            Failed: {failed_count}
+            Skipped: {skipped_count}
+            Success rate: {(sent_count / total_unique_users * 100) if total_unique_users > 0 else 0:.1f}%
+        """)
+        
+        return {
+            'sent': sent_count,
+            'failed': failed_count,
+            'skipped': skipped_count,
+            'total': total_unique_users
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in promotion campaign for task {task.id}: {str(e)}", exc_info=True)
+        return {'sent': 0, 'failed': 0, 'skipped': 0, 'total': 0, 'error': str(e)}

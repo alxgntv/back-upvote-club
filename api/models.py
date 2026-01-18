@@ -15,7 +15,7 @@ class UserProfile(models.Model):
     DISCOUNT_RATES = {
         'FREE': 0,
         'MEMBER': 0,
-        'BUDDY': 20,
+        'BUDDY': 0,
         'MATE': 40
     }
     
