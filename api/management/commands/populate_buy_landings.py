@@ -357,3 +357,8 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS('\n' + '='*60))
         self.stdout.write(self.style.SUCCESS(f'✅ Successfully updated {updated_count} Buy Landing(s)!'))
         self.stdout.write(self.style.SUCCESS('='*60 + '\n'))
+
+# =========================
+# Команда для запуска на Heroku:
+# =========================
+# heroku run python manage.py populate_buy_landings
