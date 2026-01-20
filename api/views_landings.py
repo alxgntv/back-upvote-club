@@ -6,6 +6,7 @@ from rest_framework import status
 from .models import ActionLanding, SocialNetwork
 from .serializers import ActionLandingSerializer
 import logging
+from django.core.cache import cache
 
 logger = logging.getLogger('api')
 
@@ -19,6 +20,52 @@ class ActionLandingViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = ActionLandingSerializer
     permission_classes = [AllowAny]
     lookup_field = 'slug'
+
+    def list(self, request, *args, **kwargs):
+        """
+        Cached list of action landings
+        """
+        social_network_code = request.query_params.get('social_network')
+        action_code = request.query_params.get('action')
+        
+        cache_key = f'action_landings_list_{social_network_code or "all"}_{action_code or "all"}'
+        cached_data = cache.get(cache_key)
+        
+        if cached_data is not None:
+            response = Response(cached_data, status=status.HTTP_200_OK)
+            response['X-Cache-Status'] = 'HIT'
+            return response
+        
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True)
+        
+        cache.set(cache_key, serializer.data, timeout=31536000)
+        
+        response = Response(serializer.data, status=status.HTTP_200_OK)
+        response['X-Cache-Status'] = 'MISS'
+        return response
+    
+    def retrieve(self, request, *args, **kwargs):
+        """
+        Cached retrieve of single action landing by slug
+        """
+        slug = kwargs.get('slug')
+        cache_key = f'action_landing_{slug}'
+        cached_data = cache.get(cache_key)
+        
+        if cached_data is not None:
+            response = Response(cached_data, status=status.HTTP_200_OK)
+            response['X-Cache-Status'] = 'HIT'
+            return response
+        
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        
+        cache.set(cache_key, serializer.data, timeout=31536000)
+        
+        response = Response(serializer.data, status=status.HTTP_200_OK)
+        response['X-Cache-Status'] = 'MISS'
+        return response
 
     def get_queryset(self):
         queryset = ActionLanding.objects.all().select_related(
@@ -69,6 +116,15 @@ class ActionLandingViewSet(viewsets.ReadOnlyModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        path_normalized = path.strip('/').lower()
+        cache_key = f'action_landing_by_path_{path_normalized}'
+        cached_data = cache.get(cache_key)
+        
+        if cached_data is not None:
+            response = Response(cached_data, status=status.HTTP_200_OK)
+            response['X-Cache-Status'] = 'HIT'
+            return response
+        
         # Убираем ведущий и trailing слэш
         path = path.strip('/')
         parts = [p for p in path.split('/') if p]
@@ -99,7 +155,10 @@ class ActionLandingViewSet(viewsets.ReadOnlyModelViewSet):
             
             if landing:
                 serializer = self.get_serializer(landing)
-                return Response(serializer.data)
+                cache.set(cache_key, serializer.data, timeout=31536000)
+                response = Response(serializer.data)
+                response['X-Cache-Status'] = 'MISS'
+                return response
             
             return Response(
                 {'error': f'Landing not found for path: /{path}'},
@@ -121,7 +180,10 @@ class ActionLandingViewSet(viewsets.ReadOnlyModelViewSet):
             
             if landing:
                 serializer = self.get_serializer(landing)
-                return Response(serializer.data)
+                cache.set(cache_key, serializer.data, timeout=31536000)
+                response = Response(serializer.data)
+                response['X-Cache-Status'] = 'MISS'
+                return response
             
             # Вариант 2b: /twitter/buy-twitter-landing → ищем кастомный slug под платформой (action=None)
             landing = ActionLanding.objects.filter(
@@ -132,7 +194,10 @@ class ActionLandingViewSet(viewsets.ReadOnlyModelViewSet):
             
             if landing:
                 serializer = self.get_serializer(landing)
-                return Response(serializer.data)
+                cache.set(cache_key, serializer.data, timeout=31536000)
+                response = Response(serializer.data)
+                response['X-Cache-Status'] = 'MISS'
+                return response
             
             return Response(
                 {'error': f'Landing not found for path: /{path}'},

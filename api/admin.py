@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Task, TaskCompletion, UserProfile, InviteCode, EmailCampaign, EmailSubscriptionType, UserEmailSubscription, SocialNetwork, UserSocialProfile, PostCategory, PostTag, BlogPost, TwitterServiceAccount, ActionType, TwitterUserMapping, PaymentTransaction, TaskReport, ActionLanding, BuyLanding, Landing, Withdrawal, OnboardingProgress, Review, ApiKey, CrowdTask
+from .models import Task, TaskCompletion, UserProfile, InviteCode, EmailCampaign, EmailSubscriptionType, UserEmailSubscription, SocialNetwork, UserSocialProfile, PostCategory, PostTag, BlogPost, TwitterServiceAccount, ActionType, TwitterUserMapping, PaymentTransaction, TaskReport, ActionLanding, BuyLanding, Landing, Withdrawal, OnboardingProgress, Review, ApiKey, CrowdTask, CacheEntry
 from django.utils import timezone
 import logging
 from django.template import Template, Context
@@ -2733,6 +2733,7 @@ class ActionLandingAdmin(admin.ModelAdmin):
     )
     save_on_top = True
     prepopulated_fields = {'slug': ('title',)}
+    actions = ['clear_cache_for_selected']
 
     def has_meta_title(self, obj):
         """Проверяет заполненность meta_title"""
@@ -2956,6 +2957,36 @@ class ActionLandingAdmin(admin.ModelAdmin):
         }
         return render(request, 'admin/actionlanding_import_csv.html', context)
     
+    def clear_cache_for_selected(self, request, queryset):
+        """
+        Clear cache for selected ActionLanding entries
+        """
+        from django.core.cache import cache
+        
+        cache.delete('action_landings_list_all_all')
+        
+        count = 0
+        for landing in queryset:
+            cache.delete(f'action_landing_{landing.slug}')
+            cache.delete(f'action_landing_by_path_{landing.slug}')
+            
+            if landing.social_network and landing.action:
+                social_code = landing.social_network.code.lower()
+                action_code = landing.action.upper()
+                path_key = f'{social_code}/{action_code.lower()}'
+                cache.delete(f'action_landing_by_path_{path_key}')
+                cache.delete(f'action_landings_list_{social_code}_{action_code}')
+            
+            count += 1
+        
+        self.message_user(
+            request,
+            f'Cache cleared for {count} action landing(s).',
+            level=messages.SUCCESS
+        )
+    
+    clear_cache_for_selected.short_description = 'Clear cache for selected landings'
+
     def save_model(self, request, obj, form, change):
         super().save_model(request, obj, form, change)
         results, global_error = submit_actionlanding_to_google(obj)
@@ -3035,7 +3066,29 @@ class BuyLandingAdmin(admin.ModelAdmin):
     )
     save_on_top = True
     prepopulated_fields = {'slug': ('title',)}
-    actions = ['submit_to_google_index']
+    actions = ['submit_to_google_index', 'clear_cache_for_selected']
+    
+    def clear_cache_for_selected(self, request, queryset):
+        """
+        Clear cache for selected BuyLanding entries
+        """
+        from django.core.cache import cache
+        
+        cache.delete('buy_landings_list')
+        cache.delete('buy_landings_all')
+        
+        count = 0
+        for landing in queryset:
+            cache.delete(f'buy_landing_{landing.slug}')
+            count += 1
+        
+        self.message_user(
+            request,
+            f'Cache cleared for {count} buy landing(s).',
+            level=messages.SUCCESS
+        )
+    
+    clear_cache_for_selected.short_description = 'Clear cache for selected landings'
     
     def submit_to_google_index(self, request, queryset):
         """
@@ -3394,3 +3447,73 @@ class ApiKeyAdmin(admin.ModelAdmin):
         """Делаем key_hash всегда readonly"""
         readonly = list(self.readonly_fields)
         return readonly
+
+
+@admin.register(CacheEntry)
+class CacheEntryAdmin(admin.ModelAdmin):
+    """
+    Admin for viewing and managing cache entries
+    """
+    list_display = (
+        'cache_key',
+        'get_type',
+        'get_size_display',
+        'expires',
+        'is_expired_display',
+        'created_time'
+    )
+    list_filter = ('expires',)
+    search_fields = ('cache_key',)
+    readonly_fields = ('cache_key', 'value', 'expires')
+    actions = ['delete_selected_cache']
+    
+    def get_type(self, obj):
+        """Show cache type"""
+        return obj.get_type()
+    get_type.short_description = 'Type'
+    
+    def get_size_display(self, obj):
+        """Show cache size in KB/MB"""
+        size_kb = obj.get_size()
+        if size_kb > 1024:
+            return f'{size_kb/1024:.2f} MB'
+        return f'{size_kb:.2f} KB'
+    get_size_display.short_description = 'Size'
+    
+    def is_expired_display(self, obj):
+        """Show if cache is expired"""
+        is_expired = obj.is_expired()
+        if is_expired:
+            return format_html('<span style="color: red;">❌ Expired</span>')
+        return format_html('<span style="color: green;">✅ Active</span>')
+    is_expired_display.short_description = 'Status'
+    
+    def created_time(self, obj):
+        """Calculate approximate creation time"""
+        from django.utils import timezone
+        created = obj.expires - timezone.timedelta(seconds=31536000)
+        return created
+    created_time.short_description = 'Created At'
+    
+    def delete_selected_cache(self, request, queryset):
+        """
+        Delete selected cache entries
+        """
+        count = queryset.count()
+        queryset.delete()
+        
+        self.message_user(
+            request,
+            f'Successfully deleted {count} cache entry(ies).',
+            level=messages.SUCCESS
+        )
+    
+    delete_selected_cache.short_description = 'Delete selected cache entries'
+    
+    def has_add_permission(self, request):
+        """Prevent manual creation of cache entries"""
+        return False
+    
+    def has_change_permission(self, request, obj=None):
+        """Prevent editing of cache entries"""
+        return False

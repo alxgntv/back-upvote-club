@@ -58,6 +58,7 @@ import logging
 from .utils.email_utils import send_welcome_email, send_task_deleted_due_to_link_email
 import time
 import stripe
+from django.core.cache import cache
 from .constants import SUBSCRIPTION_PLAN_CONFIG, SUBSCRIPTION_PERIODS
 from .views_landings import ActionLandingViewSet
 import traceback
@@ -6253,11 +6254,67 @@ class BuyLandingViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [AllowAny]
     lookup_field = 'slug'
 
+    def list(self, request, *args, **kwargs):
+        """
+        Cached list of buy landings
+        """
+        cache_key = 'buy_landings_list'
+        cached_data = cache.get(cache_key)
+        
+        if cached_data is not None:
+            response = Response(cached_data, status=status.HTTP_200_OK)
+            response['X-Cache-Status'] = 'HIT'
+            return response
+        
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True)
+        
+        cache.set(cache_key, serializer.data, timeout=31536000)
+        
+        response = Response(serializer.data, status=status.HTTP_200_OK)
+        response['X-Cache-Status'] = 'MISS'
+        return response
+    
+    def retrieve(self, request, *args, **kwargs):
+        """
+        Cached retrieve of single buy landing by slug
+        """
+        slug = kwargs.get('slug')
+        cache_key = f'buy_landing_{slug}'
+        cached_data = cache.get(cache_key)
+        
+        if cached_data is not None:
+            response = Response(cached_data, status=status.HTTP_200_OK)
+            response['X-Cache-Status'] = 'HIT'
+            return response
+        
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        
+        cache.set(cache_key, serializer.data, timeout=31536000)
+        
+        response = Response(serializer.data, status=status.HTTP_200_OK)
+        response['X-Cache-Status'] = 'MISS'
+        return response
+
     @action(detail=False, methods=['get'])
     def all(self, request):
         """
-        Возвращает все buy лендинги с полным контентом
+        Cached endpoint returning all buy landings with full content
         """
+        cache_key = 'buy_landings_all'
+        cached_data = cache.get(cache_key)
+        
+        if cached_data is not None:
+            response = Response(cached_data, status=status.HTTP_200_OK)
+            response['X-Cache-Status'] = 'HIT'
+            return response
+        
         landings = self.get_queryset()
         serializer = self.get_serializer(landings, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        
+        cache.set(cache_key, serializer.data, timeout=31536000)
+        
+        response = Response(serializer.data, status=status.HTTP_200_OK)
+        response['X-Cache-Status'] = 'MISS'
+        return response

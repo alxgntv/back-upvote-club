@@ -1750,3 +1750,38 @@ class ApiKey(models.Model):
     def is_valid(self):
         """Проверяет, валиден ли ключ (активен и не истек)"""
         return self.is_active and not self.is_expired()
+
+
+class CacheEntry(models.Model):
+    """
+    Proxy model for viewing django_cache_table contents in admin
+    """
+    cache_key = models.CharField(max_length=255, primary_key=True)
+    value = models.TextField()
+    expires = models.DateTimeField()
+    
+    class Meta:
+        managed = False
+        db_table = 'django_cache_table'
+        verbose_name = 'Cache Entry'
+        verbose_name_plural = 'Cache Entries'
+    
+    def __str__(self):
+        return self.cache_key
+    
+    def is_expired(self):
+        """Check if cache entry is expired"""
+        return self.expires < timezone.now()
+    
+    def get_size(self):
+        """Return cache size in KB"""
+        return len(self.value) / 1024
+    
+    def get_type(self):
+        """Determine cache type by key"""
+        if 'buy_landing' in self.cache_key:
+            return 'BuyLanding'
+        elif 'action_landing' in self.cache_key:
+            return 'ActionLanding'
+        else:
+            return 'Other'
