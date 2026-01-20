@@ -889,7 +889,7 @@ def send_task_created_email(task):
         network = task.social_network.name
         qty = task.actions_required
         upgrade_url = f"https://upvote.club/dashboard/subscribe?plan=MATE&billing=monthly#payment"
-        tasks_url = f"https://upvote.club/dashboard/tasks"
+        tasks_url = f"https://upvote.club/dashboard?tab=mytasks"
         
         # Формируем HTML контент письма
         html_content = f"""
