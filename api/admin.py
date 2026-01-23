@@ -3266,8 +3266,8 @@ class WithdrawalAdmin(admin.ModelAdmin):
             qs = qs.annotate(
                 completed_tasks_count=Count('user__taskcompletion', distinct=True),
                 verified_social_profiles_count=Count(
-                    'user__usersocialprofile',
-                    filter=Q(user__usersocialprofile__verification_status='VERIFIED'),
+                    'user__social_profiles',
+                    filter=Q(user__social_profiles__verification_status='VERIFIED'),
                     distinct=True
                 )
             )
