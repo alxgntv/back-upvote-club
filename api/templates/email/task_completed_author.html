@@ -121,13 +121,17 @@
                     <span class="task-stat-label">📈 Shipped {{ task.social_network.name }} {{ task.type }}: </span>
                     <span class="task-stat-value">{{ task.actions_completed }}</span>
                 </div>
+                <div class="task-stat">
+                    <span class="task-stat-label">🔗 URL: </span>
+                    <span class="task-stat-value">{{ task.post_url }}</span>
+                </div>
             </div>
             <div style="text-align: center;">
                 <a
                     href="https://upvote.club/dashboard/createtask?email={{ user_email }}&social={{ task.social_network.code|default:task.social_network.name|lower }}&socialnetwork={{ task.social_network.code|default:task.social_network.name|lower }}&action={{ task.type|lower }}&url={{ task.post_url|urlencode }}&quantity={{ task.actions_required }}&price=2"
                     class="view-button"
                 >
-                    Create new task 
+                    Promote again 💪
                 </a>
             </div>
         </div>
