@@ -3303,11 +3303,43 @@ class WithdrawalAdmin(admin.ModelAdmin):
     
     def mark_as_completed(self, request, queryset):
         """Отметить как завершено"""
-        updated = queryset.filter(status__in=['PENDING', 'PROCESSING']).update(
-            status='COMPLETED',
-            processed_at=timezone.now()
-        )
-        self.message_user(request, f'{updated} withdrawal(s) marked as completed.')
+        from api.utils.email_utils import send_withdrawal_completed_email
+        
+        updated_count = 0
+        email_sent_count = 0
+        email_failed_count = 0
+        
+        # Фильтруем только PENDING и PROCESSING
+        queryset = queryset.filter(status__in=['PENDING', 'PROCESSING'])
+        
+        for withdrawal in queryset:
+            old_status = withdrawal.status
+            withdrawal.status = 'COMPLETED'
+            if not withdrawal.processed_at:
+                withdrawal.processed_at = timezone.now()
+            withdrawal.save()
+            updated_count += 1
+            
+            # Отправляем email
+            try:
+                if send_withdrawal_completed_email(withdrawal):
+                    email_sent_count += 1
+                    logger.info(f"Email sent for withdrawal #{withdrawal.id}")
+                else:
+                    email_failed_count += 1
+                    logger.warning(f"Email failed for withdrawal #{withdrawal.id}")
+            except Exception as e:
+                email_failed_count += 1
+                logger.error(f"Email error for withdrawal #{withdrawal.id}: {str(e)}")
+        
+        # Сообщение с детальной статистикой
+        message = f'{updated_count} withdrawal(s) marked as completed. '
+        if email_sent_count > 0:
+            message += f'✅ {email_sent_count} email(s) sent. '
+        if email_failed_count > 0:
+            message += f'⚠️ {email_failed_count} email(s) failed.'
+        
+        self.message_user(request, message)
     mark_as_completed.short_description = 'Mark selected withdrawals as completed'
     
     def mark_as_failed(self, request, queryset):
