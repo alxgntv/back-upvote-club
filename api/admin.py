@@ -3383,6 +3383,140 @@ class OnboardingProgressAdmin(admin.ModelAdmin):
     search_fields = ('user__username', 'chosen_country', 'account_type')
     list_filter = ('account_type',)
     readonly_fields = ('created_at', 'updated_at')
+    actions = ['export_to_csv_and_email']
+
+    def export_to_csv_and_email(self, request, queryset):
+        """
+        Экспортирует выбранные OnboardingProgress в CSV и отправляет по email.
+        Оптимизирован для работы с большими объемами данных (20k-50k записей).
+        """
+        import csv
+        import io
+        from django.utils import timezone
+        
+        try:
+            # Создаем CSV в памяти
+            output = io.StringIO()
+            writer = csv.writer(output)
+            
+            # Заголовки CSV
+            headers = [
+                'Chosen Country',
+                'Account Type',
+                'Social Networks',
+                'Actions',
+                'Goal Description',
+                'Created At',
+                'Updated At'
+            ]
+            writer.writerow(headers)
+            
+            # Записываем данные итеративно для экономии памяти
+            records_count = 0
+            for progress in queryset.select_related('user').iterator(chunk_size=1000):
+                
+                # Форматируем social_networks
+                social_networks_str = ''
+                if progress.social_networks:
+                    if isinstance(progress.social_networks, list):
+                        social_networks_str = ', '.join(progress.social_networks)
+                    else:
+                        social_networks_str = str(progress.social_networks)
+                
+                # Форматируем actions
+                actions_str = ''
+                if progress.actions:
+                    if isinstance(progress.actions, dict):
+                        actions_list = []
+                        for network, action_list in progress.actions.items():
+                            actions_list.append(f"{network}: {', '.join(action_list)}")
+                        actions_str = '; '.join(actions_list)
+                    else:
+                        actions_str = str(progress.actions)
+                
+                row = [
+                    progress.chosen_country or '',
+                    progress.account_type or '',
+                    social_networks_str,
+                    actions_str,
+                    (progress.goal_description or '').replace('\n', ' ').replace('\r', ''),
+                    progress.created_at.strftime('%Y-%m-%d %H:%M:%S') if progress.created_at else '',
+                    progress.updated_at.strftime('%Y-%m-%d %H:%M:%S') if progress.updated_at else ''
+                ]
+                writer.writerow(row)
+                records_count += 1
+            
+            # Получаем CSV контент
+            csv_content = output.getvalue()
+            output.close()
+            
+            # Отправляем email
+            email_service = EmailService()
+            timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
+            filename = f'onboarding_progress_{timestamp}.csv'
+            
+            subject = f'Onboarding Progress Export - {records_count} records'
+            html_content = f"""
+            <html>
+            <body>
+                <h2>Onboarding Progress Export</h2>
+                <p>Export completed successfully.</p>
+                <ul>
+                    <li><strong>Records exported:</strong> {records_count}</li>
+                    <li><strong>Export date:</strong> {timezone.now().strftime('%Y-%m-%d %H:%M:%S UTC')}</li>
+                    <li><strong>Exported by:</strong> {request.user.username}</li>
+                </ul>
+                <p>The CSV file is attached to this email.</p>
+                <br>
+                <p>Best regards,<br>Upvote.Club Team</p>
+            </body>
+            </html>
+            """
+            
+            # Список получателей
+            recipients = [
+                'yesupvote@gmail.com',
+                'alexey.guberman@gmail.com',
+                'yes@upvote.club'
+            ]
+            
+            # Отправляем каждому получателю
+            success_count = 0
+            for recipient in recipients:
+                attachments = [(filename, csv_content, 'text/csv')]
+                if email_service.send_email(
+                    to_email=recipient,
+                    subject=subject,
+                    html_content=html_content,
+                    attachments=attachments
+                ):
+                    success_count += 1
+                    logger.info(f"CSV exported and sent to {recipient}")
+                else:
+                    logger.error(f"Failed to send CSV to {recipient}")
+            
+            if success_count > 0:
+                self.message_user(
+                    request,
+                    f'Successfully exported {records_count} records and sent to {success_count}/{len(recipients)} recipients.',
+                    messages.SUCCESS
+                )
+            else:
+                self.message_user(
+                    request,
+                    f'Exported {records_count} records but failed to send emails.',
+                    messages.ERROR
+                )
+            
+        except Exception as e:
+            logger.error(f"Error exporting OnboardingProgress: {e}", exc_info=True)
+            self.message_user(
+                request,
+                f'Error during export: {str(e)}',
+                messages.ERROR
+            )
+    
+    export_to_csv_and_email.short_description = "Export selected to CSV and send via email"
 
 @admin.register(Review)
 class ReviewAdmin(admin.ModelAdmin):
