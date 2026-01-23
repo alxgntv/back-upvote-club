@@ -807,7 +807,6 @@ def send_withdrawal_completed_email(withdrawal):
         except Exception as e:
             logger.warning(f"No withdrawal_completed subscription found for user {withdrawal.user.username}: {str(e)}")
 
-        # Получаем верифицированные социальные профили пользователя
         from ..models import UserSocialProfile
         
         social_profiles = UserSocialProfile.objects.filter(
