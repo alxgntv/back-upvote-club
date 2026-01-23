@@ -3217,6 +3217,15 @@ class WithdrawalAdmin(admin.ModelAdmin):
         'amount_usd'
     ]
     
+    # Оптимизация: select_related для связанных объектов
+    list_select_related = ['user', 'user__userprofile']
+    
+    # Оптимизация: уменьшаем количество записей на странице
+    list_per_page = 50
+    
+    # Оптимизация: показываем "Показать все" только для небольших списков
+    list_max_show_all = 200
+    
     fieldsets = (
         ('Basic Information', {
             'fields': (
@@ -3247,24 +3256,29 @@ class WithdrawalAdmin(admin.ModelAdmin):
     
     def get_queryset(self, request):
         """Оптимизация запросов для админки"""
-        return super().get_queryset(request).select_related('user').annotate(
-            completed_tasks_count=Count('user__taskcompletion', distinct=True),
-            verified_social_profiles_count=Coalesce(
-                Subquery(
-                    UserSocialProfile.objects.filter(
-                        user=OuterRef('user_id'),
-                        verification_status='VERIFIED'
-                    ).values('user').annotate(count=Count('id')).values('count')[:1],
-                    output_field=IntegerField()
-                ),
-                0
+        qs = super().get_queryset(request)
+        
+        # Используем select_related для user и userprofile
+        qs = qs.select_related('user', 'user__userprofile')
+        
+        # Добавляем аннотации только для списка (не для детальной страницы)
+        if not request.resolver_match.kwargs.get('object_id'):
+            qs = qs.annotate(
+                completed_tasks_count=Count('user__taskcompletion', distinct=True),
+                verified_social_profiles_count=Count(
+                    'user__usersocialprofile',
+                    filter=Q(user__usersocialprofile__verification_status='VERIFIED'),
+                    distinct=True
+                )
             )
-        )
+        
+        return qs
     
     def get_completed_tasks_count(self, obj):
         """Получает количество выполненных заданий для пользователя"""
         if hasattr(obj, 'completed_tasks_count'):
             return obj.completed_tasks_count
+        # Fallback для детальной страницы
         return TaskCompletion.objects.filter(user=obj.user).count()
     get_completed_tasks_count.short_description = 'Completed Tasks'
     get_completed_tasks_count.admin_order_field = 'completed_tasks_count'
@@ -3272,8 +3286,8 @@ class WithdrawalAdmin(admin.ModelAdmin):
     def get_verified_social_profiles_count(self, obj):
         """Получает количество верифицированных социальных сетей для пользователя"""
         if hasattr(obj, 'verified_social_profiles_count'):
-            count = obj.verified_social_profiles_count
-            return count if count is not None else 0
+            return obj.verified_social_profiles_count
+        # Fallback для детальной страницы
         return UserSocialProfile.objects.filter(
             user=obj.user,
             verification_status='VERIFIED'
