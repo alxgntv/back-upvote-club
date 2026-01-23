@@ -197,12 +197,8 @@
                 </div>
                 {% if withdrawal.withdrawal_method == 'USDT' %}
                 <div class="withdrawal-stat">
-                    <span class="withdrawal-stat-label">💸 Network Fee:</span>
+                    <span class="withdrawal-stat-label">💸 USDT TRC20 Fee:</span>
                     <span class="withdrawal-stat-value">$1.50</span>
-                </div>
-                <div class="withdrawal-stat" style="border-bottom: 2px solid #e5e7eb;">
-                    <span class="withdrawal-stat-label"><strong>💰 You will receive:</strong></span>
-                    <span class="withdrawal-stat-value"><strong>${{ withdrawal.amount_usd|add:"-1.5" }}</strong></span>
                 </div>
                 {% endif %}
                 <div class="withdrawal-stat">
