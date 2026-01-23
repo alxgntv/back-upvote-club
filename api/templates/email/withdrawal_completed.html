@@ -117,8 +117,16 @@
         a.view-button {
             color: #ffffff!important;
         }
+        h2 {
+            color: #1f2937;
+            font-size: 20px;
+            margin: 24px 0 16px 0;
+        }
         /* Темная тема */
         @media (prefers-color-scheme: dark) {
+            h2 {
+                color: #f3f4f6 !important;
+            }
             body {
                 background-color: #18181b !important;
             }
@@ -145,6 +153,9 @@
             .reminder-section {
                 background: #422006 !important;
                 border: 1px solid #78350f !important;
+            }
+            .reminder-section a {
+                color: #60a5fa !important;
             }
             .reminder-title {
                 color: #fbbf24 !important;
@@ -184,6 +195,22 @@
                 <li><strong>Remove emojis</strong> (🧗‍♂️😄🤩🤖😛) from ALL your social media accounts!</li>
                 <li><strong>Add profile pictures</strong> to ALL your social media accounts!</li>
             </ol>
+            
+            {% if social_profiles %}
+            <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #fbbf24;">
+                <p style="margin: 0 0 8px 0; font-weight: 600; color: #92400e;">Your Profile URLs - Please Remove Emojis and Add Profile Pictures:</p>
+                <ul style="margin: 0; padding-left: 20px; color: #78350f; font-size: 14px;">
+                    {% for profile in social_profiles %}
+                    <li style="margin-bottom: 6px;">
+                        <a href="{{ profile.profile_url }}" style="color: #2563eb; text-decoration: none; word-break: break-all;">
+                            {{ profile.profile_url }}
+                        </a>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            
             <p class="warning-text">⚠️Or your account can be BLOCKED!</p>
         </div>
 
@@ -219,6 +246,7 @@
                 </div>
             </div>
         </div>
+
         <div class="footer">
             <p>Thank you for using Upvote.Club! 🎉</p>
             {% if unsubscribe_url %}

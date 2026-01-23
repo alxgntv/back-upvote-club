@@ -807,14 +807,23 @@ def send_withdrawal_completed_email(withdrawal):
         except Exception as e:
             logger.warning(f"No withdrawal_completed subscription found for user {withdrawal.user.username}: {str(e)}")
 
+        # Получаем верифицированные социальные профили пользователя
+        from ..models import UserSocialProfile
+        
+        social_profiles = UserSocialProfile.objects.filter(
+            user=withdrawal.user,
+            verification_status='VERIFIED'
+        ).select_related('social_network').order_by('social_network__name')
+        
         # Формируем контекст для шаблона
         context = {
             'withdrawal': withdrawal,
             'user_email': user_email,
-            'unsubscribe_url': unsubscribe_url
+            'unsubscribe_url': unsubscribe_url,
+            'social_profiles': social_profiles
         }
 
-        logger.info(f"Rendering HTML email template for withdrawal completed (withdrawal_id={withdrawal.id})")
+        logger.info(f"Rendering HTML email template for withdrawal completed (withdrawal_id={withdrawal.id}, profiles={social_profiles.count()})")
         html_content = render_to_string('email/withdrawal_completed.html', context)
         logger.info(f"HTML content rendered for withdrawal completed email, length: {len(html_content)} chars")
 
