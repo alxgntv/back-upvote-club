@@ -807,25 +807,22 @@ def send_withdrawal_completed_email(withdrawal):
         except Exception as e:
             logger.warning(f"No withdrawal_completed subscription found for user {withdrawal.user.username}: {str(e)}")
 
-        # Формируем текст письма
-        email_body = f"""
-Your withdrawal request has been completed!
+        # Формируем контекст для шаблона
+        context = {
+            'withdrawal': withdrawal,
+            'user_email': user_email,
+            'unsubscribe_url': unsubscribe_url
+        }
 
-IMPORTANT REMINDERS:
-1. Please remove emojis (🧗‍♂️😄🤩🤖😛) from your accounts!
-2. Please add profile pictures to all your social media accounts!
-
-Or your account can be suspended!
-
-Thank you for using Upvote.Club!
-"""
-        logger.info(f"Prepared email body for withdrawal completed: {email_body.strip()}")
+        logger.info(f"Rendering HTML email template for withdrawal completed (withdrawal_id={withdrawal.id})")
+        html_content = render_to_string('email/withdrawal_completed.html', context)
+        logger.info(f"HTML content rendered for withdrawal completed email, length: {len(html_content)} chars")
 
         email_service = EmailService()
         result = email_service.send_email(
             to_email=user_email,
-            subject=f'Withdrawal Completed',
-            html_content=email_body,
+            subject='Withdrawal Completed',
+            html_content=html_content,
             unsubscribe_url=unsubscribe_url,
             bcc_email='yes@upvote.club'
         )

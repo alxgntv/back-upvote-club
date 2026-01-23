@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        /* Поддержка темной темы через prefers-color-scheme */
+        /* Светлая тема (по умолчанию) */
+        body {
+            font-family: Inter, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 600px;
+            margin: 32px auto;
+            padding: 20px;
+            background: #ffffff;
+            border-radius: 32px;
+        }
+        .header {
+            text-align: center;
+            padding: 20px 0;
+            color: #000000;
+        }
+        .header h2 {
+            margin: 0 0 8px 0;
+            font-size: 24px;
+        }
+        .header p {
+            margin: 0;
+            color: #6b7280;
+            font-size: 16px;
+        }
+        .withdrawal-card {
+            padding: 16px;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            margin-bottom: 16px;
+        }
+        .withdrawal-info {
+            margin-bottom: 12px;
+        }
+        .withdrawal-stat {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        .withdrawal-stat:last-child {
+            border-bottom: none;
+        }
+        .withdrawal-stat-label {
+            color: #6b7280;
+        }
+        .withdrawal-stat-value {
+            font-weight: 600;
+            color: #1f2937;
+            padding-left: 4px;
+        }
+        .success-badge {
+            display: inline-block;
+            background: #10b981;
+            color: #ffffff;
+            padding: 4px 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .reminder-section {
+            background: #fef3c7;
+            border: 1px solid #fbbf24;
+            border-radius: 12px;
+            padding: 16px;
+            margin: 16px 0;
+        }
+        .reminder-title {
+            font-weight: 700;
+            color: #92400e;
+            margin: 0 0 12px 0;
+            font-size: 16px;
+        }
+        .reminder-list {
+            margin: 0;
+            padding-left: 20px;
+            color: #78350f;
+        }
+        .reminder-list li {
+            margin-bottom: 8px;
+        }
+        .warning-text {
+            color: #dc2626;
+            font-weight: 600;
+            margin-top: 12px;
+        }
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #6b7280;
+            font-size: 14px;
+        }
+        .footer a {
+            color: #2563eb;
+            text-decoration: none;
+        }
+        .view-button {
+            display: inline-block;
+            background: #000000;
+            color: #ffffff;
+            padding: 12px 24px;
+            border-radius: 12px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            margin-top: 16px;
+        }
+        a.view-button {
+            color: #ffffff!important;
+        }
+        /* Темная тема */
+        @media (prefers-color-scheme: dark) {
+            body {
+                background-color: #18181b !important;
+            }
+            .container {
+                background: #23232a !important;
+                color: #f3f4f6 !important;
+            }
+            .header {
+                color: #f3f4f6 !important;
+            }
+            .header p {
+                color: #a1a1aa !important;
+            }
+            .withdrawal-card {
+                border: 1px solid #333646 !important;
+                background: #23232a !important;
+            }
+            .withdrawal-stat-label {
+                color: #a1a1aa !important;
+            }
+            .withdrawal-stat-value {
+                color: #f3f4f6 !important;
+            }
+            .reminder-section {
+                background: #422006 !important;
+                border: 1px solid #78350f !important;
+            }
+            .reminder-title {
+                color: #fbbf24 !important;
+            }
+            .reminder-list {
+                color: #fcd34d !important;
+            }
+            .warning-text {
+                color: #f87171 !important;
+            }
+            .view-button {
+                background: #f3f4f6 !important;
+                color: #18181b !important;
+            }
+            a.view-button {
+                color: #18181b !important;
+            }
+            .footer {
+                color: #a1a1aa !important;
+            }
+            .footer a {
+                color: #60a5fa !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>💰 Withdrawal Completed!</h2>
+            <p>Your withdrawal request has been successfully processed</p>
+        </div>
+
+        <div class="withdrawal-card">
+            <div class="withdrawal-info">
+                <div class="withdrawal-stat">
+                    <span class="withdrawal-stat-label">💵 Amount:</span>
+                    <span class="withdrawal-stat-value">${{ withdrawal.amount_usd }}</span>
+                </div>
+                <div class="withdrawal-stat">
+                    <span class="withdrawal-stat-label">💎 Points Sold:</span>
+                    <span class="withdrawal-stat-value">{{ withdrawal.points_sold }} points</span>
+                </div>
+                <div class="withdrawal-stat">
+                    <span class="withdrawal-stat-label">📤 Method:</span>
+                    <span class="withdrawal-stat-value">{{ withdrawal.withdrawal_method }}</span>
+                </div>
+                <div class="withdrawal-stat">
+                    <span class="withdrawal-stat-label">📍 Address:</span>
+                    <span class="withdrawal-stat-value" style="word-break: break-all;">{{ withdrawal.withdrawal_address }}</span>
+                </div>
+                <div class="withdrawal-stat">
+                    <span class="withdrawal-stat-label">✅ Status:</span>
+                    <span class="withdrawal-stat-value"><span class="success-badge">COMPLETED</span></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="reminder-section">
+            <p class="reminder-title">⚠️ IMPORTANT REMINDERS:</p>
+            <ol class="reminder-list">
+                <li><strong>Remove emojis</strong> (🧗‍♂️😄🤩🤖😛) from ALL your social media accounts!</li>
+                <li><strong>Add profile pictures</strong> to ALL your social media accounts!</li>
+            </ol>
+            <p class="warning-text">⚠️ Or your account can be BLOCKED!</p>
+        </div>
+
+        <div class="footer">
+            <p>Thank you for using Upvote.Club! 🎉</p>
+            {% if unsubscribe_url %}
+            <p>
+                Don't want to receive these emails? 
+                <a href="{{ unsubscribe_url }}?email={{ user_email }}">Unsubscribe</a>
+            </p>
+            {% endif %}
+            <p>Upvote.club</p>
+        </div>
+    </div>
+</body>
+</html>
