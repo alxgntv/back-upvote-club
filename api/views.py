@@ -2926,7 +2926,6 @@ def subscription_info(request):
             user_profile.status = 'FREE'
             user_profile.save(update_fields=['status'])
         
-        # Получаем конфигурацию текущего плана
         plan_config = SUBSCRIPTION_PLAN_CONFIG.get(user_profile.status, SUBSCRIPTION_PLAN_CONFIG['FREE'])
         
         # Определяем период подписки
