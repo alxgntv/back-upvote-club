@@ -1660,7 +1660,6 @@ class UserSocialProfileAdmin(admin.ModelAdmin):
     )
     list_filter = ('social_network', 'is_verified', 'verification_status')
     search_fields = ('username', 'user__email', 'social_id')
-    readonly_fields = ('last_sync_at', 'created_at', 'updated_at')
     fieldsets = (
         ('Основная информация', {
             'fields': (
@@ -1717,7 +1716,87 @@ class UserSocialProfileAdmin(admin.ModelAdmin):
                 )
     sync_profiles.short_description = "Sync selected profiles"
 
-    actions = ['export_unique_users_firebase_data', 'sync_profiles']
+    actions = ['export_to_csv', 'export_unique_users_firebase_data', 'sync_profiles']
+    
+    def export_to_csv(self, request, queryset):
+        """Экспортирует все поля выбранных UserSocialProfile записей в CSV"""
+        response = HttpResponse(content_type='text/csv; charset=utf-8')
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        response['Content-Disposition'] = f'attachment; filename="usersocialprofiles_export_{timestamp}.csv"'
+        
+        writer = csv.writer(response)
+        
+        # Заголовки CSV - все поля модели
+        headers = [
+            'ID',
+            'User ID',
+            'User Username',
+            'User Email',
+            'Social Network ID',
+            'Social Network Code',
+            'Social Network Name',
+            'Social ID',
+            'Username',
+            'Profile URL',
+            'Avatar URL',
+            'Is Verified',
+            'Verification Status',
+            'Verification Date',
+            'Rejection Reason',
+            'OAuth Token',
+            'OAuth Token Secret',
+            'Followers Count',
+            'Following Count',
+            'Posts Count',
+            'Account Created At',
+            'Created At',
+            'Updated At',
+            'Last Sync At',
+        ]
+        writer.writerow(headers)
+        
+        # Оптимизируем запросы
+        profiles = queryset.select_related('user', 'social_network')
+        
+        count = 0
+        for profile in profiles:
+            row = [
+                profile.id,
+                profile.user.id if profile.user else '',
+                profile.user.username if profile.user else '',
+                profile.user.email if profile.user else '',
+                profile.social_network.id if profile.social_network else '',
+                profile.social_network.code if profile.social_network else '',
+                profile.social_network.name if profile.social_network else '',
+                profile.social_id or '',
+                profile.username or '',
+                profile.profile_url or '',
+                profile.avatar_url or '',
+                'YES' if profile.is_verified else 'NO',
+                profile.verification_status or '',
+                profile.verification_date.strftime('%Y-%m-%d %H:%M:%S') if profile.verification_date else '',
+                profile.rejection_reason or '',
+                profile.oauth_token or '',
+                profile.oauth_token_secret or '',
+                profile.followers_count or 0,
+                profile.following_count or 0,
+                profile.posts_count or 0,
+                profile.account_created_at.strftime('%Y-%m-%d %H:%M:%S') if profile.account_created_at else '',
+                profile.created_at.strftime('%Y-%m-%d %H:%M:%S') if profile.created_at else '',
+                profile.updated_at.strftime('%Y-%m-%d %H:%M:%S') if profile.updated_at else '',
+                profile.last_sync_at.strftime('%Y-%m-%d %H:%M:%S') if profile.last_sync_at else '',
+            ]
+            writer.writerow(row)
+            count += 1
+        
+        self.message_user(
+            request, 
+            f'Successfully exported {count} UserSocialProfile records to CSV', 
+            messages.SUCCESS
+        )
+        return response
+    
+    export_to_csv.short_description = "📥 Export all fields to CSV"
     
     def export_unique_users_firebase_data(self, request, queryset):
         """Экспортирует email и имена из Firebase для всех уникальных пользователей выбранных профилей"""
