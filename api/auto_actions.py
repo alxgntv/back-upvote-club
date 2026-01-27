@@ -49,7 +49,6 @@ class TwitterAutoActions:
                     """)
                 return False
                 
-            # Берем авторизацию с самым старым использованием
             auth = auths.order_by('service_account__last_used_at').first()
             
             if not auth:
