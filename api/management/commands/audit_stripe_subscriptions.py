@@ -81,7 +81,6 @@ class Command(BaseCommand):
                 limit=100
             )
             
-            # Process active subscriptions
             active_list = list(active_subscriptions.auto_paging_iter())
             for subscription in active_list:
                 try:
