@@ -23,13 +23,13 @@ class Command(BaseCommand):
             created_at__lt=current_week_start + timedelta(days=7)
         ).count()
 
+        # Предыдущая неделя
         previous_week_tasks = TaskCompletion.objects.filter(
             user=user,
             created_at__gte=previous_week_start,
             created_at__lt=current_week_start
         ).count()
 
-        # Вычисляем процент изменения
         if previous_week_tasks > 0:
             change_percentage = ((current_week_tasks - previous_week_tasks) / previous_week_tasks) * 100
         else:
